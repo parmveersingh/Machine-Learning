@@ -1,0 +1,27 @@
+GIT CONFIG:
+git config --list
+git config -global user.name "parmveersingh"
+git config -global user.email ""
+
+
+
+ADD PATH:
+
+git remote add origin https://github.com/parmveersingh/Machine-Learning.git
+
+ADD USER WITH PASSWORD:
+
+git push -u origin master
+
+ADD IN CLOUD STORAG:
+
+git add .
+
+CHECK STATUS
+
+git status
+
+COMMIT IN GITHUB:
+
+git commit -m 'comment'
+
