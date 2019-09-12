@@ -43,3 +43,61 @@ print(arr)
 # reshape an arr
 
 print(arrys.reshape(2,2))
+
+#make array of row with arrange
+
+print(np.arange(23))
+
+#use reshape on arrage
+
+arraj = np.arange(24)
+print(arraj.reshape(2,3,4))
+
+# array with empty values, 1's and with 0's
+
+print(np.empty([2,3],dtype=int))
+print(np.zeros([3,3],dtype=int))
+print(np.ones([2,3],dtype=int))
+
+# for creating anything as array
+
+x= (1,3,54,3)
+print(np.asarray(x,dtype=float))
+
+print(np.frombuffer(arr,dtype=float))
+
+# for getting in between values
+
+print(np.arange(1,10,2))
+
+print(np.linspace(1,23,24))
+
+
+### SLICING AND INDEXING ####
+
+
+a= np.arange(24)
+print(a[1:8])
+
+b = np.empty([3,4],dtype=int)
+print(b[...,1:])
+
+# advance slicing 
+
+print(b[[1,2],1:4])
+
+#addition of 2 unequal arrays 
+
+a = np.array([[0.0,0.0,0.0],[10.0,10.0,10.0],[20.0,20.0,20.0],[30.0,30.0,30.0]]) 
+b = np.array([1.0,2.0,3.0])
+
+print a+b
+
+# loop in arrays
+
+for x in np.nditer(a):
+	print x
+
+
+
+
