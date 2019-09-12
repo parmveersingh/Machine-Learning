@@ -99,5 +99,73 @@ for x in np.nditer(a):
 	print x
 
 
+###### ARRAY MANIPULATION #####
+
+# shape changing
+
+print(a.reshape(3,4))
+
+print(a.flat[5])
+
+print(a.flatten())
+
+# transpose
+
+print(np.transpose(a))
+
+print(a.T)
+
+
+# Joining arrays
+
+c = a.flatten()
+d = np.array(b,ndmin=2)
+print(d)
+print(np.concatenate([c,b]))
+
+print(np.hstack([c,b]))
+
+
+# split arrays
+
+print(np.split(a,4))
+
+## hsplit and vsplit was there with this
+
+
+
+############# STRING FUNCTIONS #############
+
+
+e = np.array([['dsd','asd','sdfsdf']])
+f = np.array([['gh','dd','ccv']])
+print(np.char.add(e,f))
+
+# many more functions are like this add,multiply,center,capitalize,title,upper,lower,split,strip,join,replace,decode,encode
+
+
+############ Mathematical Functions ##########
+
+a = np.array([0,30,45])
+sinh=np.sin(a*np.pi/180)
+print(sinh)
+
+inv = np.arcsin(sinh)
+print inv
+
+print(np.degrees(inv))
+
+# more functions like around, floor and ceil
+
+# more function add,subtract,multiple,divide,remainder,reciprocal,power
+
+
+
+
+
+
+
+
+
 
 
