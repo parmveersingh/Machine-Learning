@@ -1,4 +1,5 @@
 import numpy as np
+import numpy.matlib
 
 # creating a simple array
 
@@ -159,13 +160,95 @@ print(np.degrees(inv))
 
 # more function add,subtract,multiple,divide,remainder,reciprocal,power
 
+# more functions are available like amin, amax, percentile, median, mean, average and standard deviation
+
+### test my knowledge ###
+z = np.arange(24,dtype='int').reshape(12,2)
+print(z[:,0])
+
+# sort and search 
+
+a = np.array([[23,43,5,34,23,12],[23,23,45,1,34,5]])
+print(np.sort(a))
+
+print(np.argsort(a))
+
+print(np.lexsort(a))
+
+print(np.argmax(a))
+
+print(np.argmin(a))
+
+print(np.nonzero(a))
+
+print(np.where(x==12))
+
+# extract is for getting element that satisfy condition
 
 
+# copy a array
+
+## there are 3 types of copy of arrays
+
+#1 a=b, in which changes made to b is also shown in a because both have same id like in c
+#2 b= a.view(), in which id's are different
+#3 c= a.copy(), this create completely different array.
 
 
+### Matrix in numpy
+
+print(np.matlib.empty([2,4]))
+
+print(np.matlib.zeros([3,2]))
+print(np.matlib.ones([3,2]))
+print(np.matlib.eye(3,2,0))
+print(np.matlib.identity(4))
+
+print(np.matlib.rand(2,2))
+
+print(np.asmatrix(a))
+
+### Linear Algebra
+
+# dot product of arrays
+b = np.array([[3,3],[15,4],[23,32],[23,23],[5,21],[34,5]])
+print(np.dot(a,b))
+
+# there is vdot product is also available
+
+# inner product of array is also we can do
+
+a = np.array([[1,2], [3,4]])
+b = np.array([[11, 12], [13, 14]]) 
+print np.inner(a,b)
+
+## there is one more function for matrix multiplication that is matmul
 
 
+################### MOST IMPORTANT CODE OF DETERMINANT ##################
 
 
+print(np.linalg.det(a))
 
+
+# FOR SOLVING LINEAR EXUATION WE HAVE
+
+a = np.array([[3,1], [1,2]])
+b = np.array([9,8])
+print(np.linalg.solve(a, b))
+
+
+# for inverse we have method 
+
+print(np.linalg.inv(a))
+
+## Save and load numpy array
+
+np.save('check',a)
+
+y = np.load('check.npy')
+print(y)
+
+
+### to save in text file we have savetxt and loadtxt function
 
