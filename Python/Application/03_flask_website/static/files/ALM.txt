@@ -1,0 +1,40 @@
+14515707
+
+
+ALM :- Application lifecycle Management is web based tool that helps to manage application lifecycle from project planning, requirement gathering , until testing and deployment. 
+
+Integrate tools:
+1) UFT
+2) Load runner
+3) Sprinter
+
+1) IBM Rational ClearQuest
+2) IBM Rational RequestPro
+3) Microsoft Team formation Server
+
+Detailed project analysis and managment.
+
+========ALM vesions==========
+
+1) It was firstly build by Mercury and is called as Quality Center.
+  	Test Director : v1.52 to v7.0 Mercury interactive
+	Quality Center : v7.0 to v8.0 
+	Hp Quality Center : v9.2 to v10
+	Hp ALM : v11.0
+
+========ALM licences=========
+
+1) HP ALM: Organisation which need full access to all access.
+2) HP ALM Essential: Just need a basic features. requriment managment, test and defect mangement.
+3) HP ALM Performance Center Edition:  Best for using HP Load runner scripts.
+4) HP QC Enterprise Unit: Organisation used ALM mainly for testing purposes and provide integration with UFT.
+
+
+=======ALM Architecture=======
+
+Hp ALM Client --------->Hp ALM Server---->Site Admin,Lab project,Project Repository
+
+
+=======ALM Workflow===========
+ 
+Release Specification----> Requirement Specification-----> Test planing ---> Test Execution---->Defect Tracking

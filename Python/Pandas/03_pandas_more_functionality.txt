@@ -1,0 +1,161 @@
+========Reindexing========
+
+Reindexing is changing a row label and column label.
+
+df.reindex(index=[0,1], columns=['col1','col2'])
+
+Out[14]:
+       col1      col2
+0 -0.130010  0.474215
+1 -0.207512 -0.627800
+
+---- rendex to align like other object-----
+
+1) reindex_like: it will give you values that much available in df
+
+    df2 = pandas.DataFrame(numpy.random.randn(7,3),columns=['col1','col2','col3'])
+    df2.reindex_like(df)
+
+    Out[18]:
+           col1      col2      col3
+    0  0.281663 -1.356783  0.895612
+    1  0.484776 -0.314925 -0.301059
+    2 -0.486443 -0.277787 -1.329606
+    3  1.402942 -0.018015  0.771185
+    4 -1.535225 -0.400600  0.882229
+
+2) limit and fill method: Limit is for setting limit of fill values and fill for filling Nan values with default values
+
+      df.reindex_like(df2,method="ffill",limit=1)
+
+      Out[19]:
+             col1      col2      col3
+      0 -0.130010  0.474215 -1.111410
+      1 -0.207512 -0.627800 -0.715213
+      2 -0.175182 -1.017542 -0.257760
+      3 -0.430299 -0.010085 -1.819392
+      4  2.581874  1.769045  1.923278
+      5  2.581874  1.769045  1.923278
+      6       NaN       NaN       NaN
+
+
+
+=================Iteration===============
+
+It is loop of different elements are showing one by one. Like array loop
+
+1) Series: values
+2) DataFrame: column labels
+3) Panel: Item labels
+
+-----DataFrame Column label---
+
+import pandas
+import numpy
+
+data = numpy.random.randn(2,3)
+df1 = pandas.DataFrame(data)
+for col in df1:
+  print col
+
+
+---there are some functions of Iteration---
+
+1) Iteration for all Items
+
+    we use iteritems()
+
+    for key,value in df1.iteritems():
+      print key,value
+
+      0 0    1.961944
+      1   -0.646083
+      Name: 0, dtype: float64
+      1 0   -0.784375
+      1    0.663713
+      Name: 1, dtype: float64
+      2 0    0.338928
+      1    1.635678
+      Name: 2, dtype: float64
+
+2) iterrows():
+it print columns regarding rows
+
+    for rowindex,rows in df1.iterrows():
+      print rowindex,rows
+
+3) itertuples():
+it print all tuple one by one.
+
+    for row in df1.itertuples():
+      print row
+
+
+=========Sorting==========
+
+1) sort_index() : it is for sorting the axis argument are sorted
+
+2) sort_index(ascending = False): it is sorting an axis argument in decending order
+
+3) Sort_index(axis= 1): It is for sorting of columns
+
+4) sort_values(by = 1): It is sorting of values regarding to particular columns
+
+5) sort_values(by=1, kind = mergesort): It is type of sorting. you want to perform on data.
+
+
+========Pandas handeling text data===============
+
+https://www.tutorialspoint.com/python_pandas/python_pandas_working_with_text_data.htm
+
+
+==========Pandas option and customization=========
+
+These are options which are by diffult set by interpretor
+
+1) get_options():
+        pd.get_option("display.max_rows"): gives max number of rows displayed at time.
+2) set_option(param1, param2):
+3) reset_option():
+4) describe_option():
+5) option_context():
+
+
+=============Pandas Selection and indexing==============
+
+There are some functions which we use to access the data by using label and index number.
+
+1) loc(): It is label based
+
+    import pandas
+    import numpy
+
+    data = numpy.random.randn(4,3)
+    df2 = pandas.DataFrame(data,columns = ["col1","col2","col3"])
+    df2.loc[1,["col1","col2"]]
+
+        Out[11]:
+    col1    0.646611
+    col2    0.184082
+    Name: 1, dtype: float64
+
+
+    df2.loc[:3,["col1","col2"]
+
+        Out[12]:
+           col1      col2
+    0 -0.170770  1.173301
+    1  0.646611  0.184082
+    2 -0.307102 -0.135856
+    3 -0.201031 -0.533272
+
+2) iloc[]: It is for getting values through use of numeric axis.
+3) ix[]: It is hybrid and we can access values with label and numeric
+4) .: We can access values by . operator.
+
+      df2.col1
+
+
+=========Pandas Statistical functions==============
+
+https://www.tutorialspoint.com/python_pandas/python_pandas_statistical_functions.htm

@@ -1,0 +1,19 @@
+{%extends "main_template.html"%}
+{%block any%}
+
+  <h2>HTML Forms</h2>
+
+  <form action="/about/" method="POST" enctype="multipart/form-data">
+  First name:<br>
+  <input type="text" name="firstname" value="Mickey">
+  <br>
+
+  Last name:<br>
+  <input type="text" name="lastname" value="Mouse">
+  <br><br>
+  <input type="submit" value="Submit" name="submit">
+  <br>
+  <input type = "file" name = "file1" />
+  </form>
+  {% print(name) %}
+{%endblock%}

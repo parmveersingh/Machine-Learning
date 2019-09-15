@@ -1,0 +1,251 @@
+===========Windows function in python==========
+
+These functions are which we use for making graph of data. this is used for making data more smooth.
+
+1) .rolling() Function:
+
+    import pandas as pd
+    import numpy as np
+
+    df = pd.DataFrame(np.random.randn(10, 4),
+       index = pd.date_range('1/1/2000', periods=10),
+       columns = ['A', 'B', 'C', 'D'])
+    df1 = df.rolling(window=3).sum()
+
+    df1= df.rolling(3,min_periods=3).sum()
+
+2) expanding():
+    it is same as rolling function but have different parameters.
+
+    df1 = df.expanding(min_periods=2).sum()
+
+3) emw():
+    Exponential weighted window.
+
+===========Aggregation==========
+
+It is used for applying two or three function on same column
+
+    df = pd.DataFrame(np.random.randn(10, 4),
+       index = pd.date_range('1/1/2000', periods=10),
+       columns = ['A', 'B', 'C', 'D'])
+    df1 = df.rolling(window=3).sum()
+      df2 = df1['A'].aggregate([np.sum,np.mean])
+
+      Out[40]:
+      sum    -10.177899
+      mean    -1.272237
+
+      Name: A, dtype: float64
+
+============Handling missing data=========
+
+https://www.tutorialspoint.com/python_pandas/python_pandas_missing_data.htm
+
+
+===========Group by function============
+
+It is for splitting the data into small groups, so we can apply functions on it.
+We can apply many things on it, like:
+1) Transform: perform group specific.
+2) Aggregation: perform sum, mean on a particular groups.
+3) filteration: Discarding of some conditions.
+
+
+  -----applying groupby----------
+
+  data = {'Team': ['Riders', 'Riders', 'Devils', 'Devils', 'Kings',
+   'kings', 'Kings', 'Kings', 'Riders', 'Royals', 'Royals', 'Riders'],
+   'Rank': [1, 2, 2, 3, 3,4 ,1 ,1,2 , 4,1,2],
+   'Year': [2014,2015,2014,2015,2014,2015,2016,2017,2016,2014,2015,2017],
+   'Points':[876,789,863,673,741,812,756,788,694,701,804,690]}
+   df1 = pd.groupby(data)
+   df1.groupby('Team').groups
+
+
+   {'Devils': Int64Index([2, 3], dtype='int64'),
+ 'Kings': Int64Index([4, 6, 7], dtype='int64'),
+ 'Riders': Int64Index([0, 1, 8, 11], dtype='int64'),
+
+ 'Royals': Int64Index([9, 10], dtype='int64'),
+ 'kings': Int64Index([5], dtype='int64')}
+
+--------Iteration on group-----------
+
+     df1 = pd.groupby(data)
+    df  = df1.groupby('Team')
+     for values,data in df:
+       print  values
+       print  data
+
+-------Select a group--------
+
+    df  = df1.groupby('Team')
+    df.get_group('Riders')
+
+    Out[61]:
+          Points  Rank    Team  Year
+      0      876     1  Riders  2014
+      1      789     2  Riders  2015
+
+      8      694     2  Riders  2016
+      11     690     2  Riders  2017
+
+1) Aggregation:
+
+    df = pd.DataFrame(ipl_data)
+    df['Points'].agg(np.mean)
+
+    Out[66]:
+    Team
+    Devils    768.000000
+    Kings     761.666667
+    Riders    762.250000
+    Royals    752.500000
+
+    kings     812.000000
+    Name: Points, dtype: float64
+
+2) Filtration:
+
+    df.groupby('Team').filter(lambda x: len(x) >= 3)
+
+
+==============Merging in Pandas============
+
+https://www.tutorialspoint.com/python_pandas/python_pandas_merging_joining.htm
+
+===========Concatination in Pandas===============
+
+https://www.tutorialspoint.com/python_pandas/python_pandas_concatenation.htm
+
+==========Date and time handling============
+
+    import pandas as pd
+    pd.datetime.now()
+
+    datetime.datetime(2019, 5, 10, 6, 54, 26, 697137)
+
+1) convert to date:
+
+    pd.Timestamp('2018/03/23')
+
+2) range of date:
+
+  pd.date_range('10:30','12:00',freq='30min')
+
+3) period in range:
+
+    frequency remain one.
+
+  pd.date_range('2013/12/11',periods=7)
+
+4) business date range:
+
+    It removes saturday and sunday from dates.
+    pd.bdate_range('2013/12/11',period=7)
+
+    there are many type of frequencies are there:
+
+    pd.date_range('2013/12/11',periods=27,freq='BA')
+
+========Category in Pandas============
+
+-----ways of creation of categories-----
+
+pd.Series([1,4,2,44,22],dtype="category")
+
+pd.Categorical(['a','c','s','a'])
+
+pd.Categorical(['a','c','s','a'],ordered=True)
+
+----Properties of categories---------
+
+1) Categories:
+
+    cat = pd.Categorical(['a','d','a','s'],categories=['s','a'])
+    cat.categories
+
+2) Order: check is category ordered
+
+    cat.ordered
+
+3) add Category:
+
+add category is not applied to categorical function
+
+    s = pd.Series([1,4,2,44,22],dtype="category")
+    s.cat.add_categories(['c'])
+
+4) remove category:
+
+  s.cat.remove_categories(['c'])
+
+  we can remove only old category.
+
+===========Visualization=============
+
+Basic plot
+
+   df = pd.DataFrame(np.random.randn(4,5),columns = list('ABCD'))
+   df.plot()
+
+   https://www.tutorialspoint.com/python_pandas/python_pandas_visualization.htm
+
+
+============I/O input===========
+
+read from csv file
+
+  pd.read_csv('/home/param/Desktop/temp.csv')
+
+2) custom index
+
+  pd.read_csv('/home/param/Desktop/temp.csv',index_col=['S.No'])
+
+3) change a datatype of column
+
+  pd.read_csv('/home/param/Desktop/temp.csv',dtype={'Salary': np.float64})
+
+4)  header_names:
+
+  pd.read_csv('/home/param/Desktop/temp.csv', names=['a','c','v','d','f'])
+
+    pd.read_csv('/home/param/Desktop/temp.csv', names=['a','c','v','d','f'], header=0)
+
+
+============Caveats and Gotchas============
+
+Caveats means warning and Gotcha means unseen problems
+
+  import pandas as pd
+
+  if pd.Series([True,False]):
+    print "hii"
+
+  ValueError: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+
+  if pd.Series([True,False]).any():
+    print "hii"
+
+2) bool: for writing a boolean
+
+    pd.Series([False]).bool()
+    Out[8]: False
+
+3) bitwise boolean
+
+  s = pd.Series(range(5))
+  print s==4
+
+  0    False
+  1    False
+  2    False
+  3    False
+  4     True
+  dtype: bool
+
+
+=========SQL queries in pandas==========
+
+https://www.tutorialspoint.com/python_pandas/python_pandas_comparison_with_sql.htm

@@ -1,0 +1,31 @@
+=======Basic Functionality==========
+
+There are some basic functions of pandas:
+https://www.tutorialspoint.com/python_pandas/python_pandas_basic_functionality.htm
+
+
+Some of static functions of pandas:
+
+https://www.tutorialspoint.com/python_pandas/python_pandas_descriptive_statistics.htm
+
+=========Functions of different layers of data===========
+
+
+1) for table level funtion apply:
+    we use pipe()
+
+
+      def adder(val1, val2):
+            return val1+val2
+       df = pandas.DataFrame(numpy.random.randn(5,3),columns=['col1','col2','col3'])
+       df.pipe(adder,2)
+
+2) for column and row level"
+    we use apply
+
+    df.apply(np.mean)
+
+3) for element level
+    we use map()
+
+    df['col1'].map(lambada x: x-2)
