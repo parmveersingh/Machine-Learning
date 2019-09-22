@@ -1,0 +1,6 @@
+Process of full linear regression
+
+1) Get a data from CSV file
+2) Divide the data into x and y scale and plot in graph
+3) Shuffle data
+4) Feature Scaling of data. 
