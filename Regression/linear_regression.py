@@ -6,9 +6,9 @@ class LinearRegression:
 	
 	def __init__(self,x,y):
 		ones=np.ones([x.shape[0],1],dtype=int)
-		self.x=np.append(x,ones,axis=1)
+		self.x=np.append(ones,x,axis=1)
 		self.y=y
-		self.theta=np.random.randn(self.x.shape[0])
+		self.theta=np.random.randn(self.x.shape[1])
 
 
 	def return_theta(self):
@@ -17,33 +17,36 @@ class LinearRegression:
 
 
 	def cost_function(self):
-
-		#h=np.matmul(self.x,self.theta)
-		h1= (self.x.T)*(self.theta)
-		#print(h)
-		print(h1)
-		self.j=(1/2*(self.x.shape[0]))*np.sum((h-self.y)**2)
+		
+		h=np.matmul(self.x,self.theta)
+		self.j=(1/(2*(self.x.shape[0])))*(np.sum((h-self.y[:,0])**2))
 		return self.j
 
 
 	def gradient(self,iters,alpha):
 		
-		self.alpha_history = []
-		self.cost_history =[]
-
+		alpha_history = []
+		cost_history =[]
+		thetas = []
+		theta=self.theta
 		for i in range(iters):
-			h=np.matmul(self.x,self.theta) 
-			print("theta")
-			anys=np.sum(h-self.y)
-			print(sum(self.x[:,0]*anys))
-			print(self.theta)
-			
+			h=np.matmul(self.x,self.theta)
 			j=self.cost_function()
-			self.cost_history.append(j)
-			self.alpha_history.append(self.theta)
-			self.theta = self.theta-(alpha/(self.x.shape[0]))*(self.x.T.dot(h-self.y))
-			print("#########")
-			print((1/(self.x.shape[0]))*((h-self.y).T.dot(self.x)))
-		print(self.theta)
-		print(self.alpha_history)
-		print(self.cost_history)
+			cost_history.append(j)
+			alpha_history.append(theta)
+			theta[1]=theta[1]-((alpha/self.x.shape[0])*np.sum(np.multiply((h-self.y[:,0]),self.x[:,1])))
+			theta[0]=theta[0]-((alpha/self.x.shape[0])*np.sum(h-self.y[:,0]))
+		
+		for i in range(2):
+			thetas.append(theta[i])
+		
+		return thetas,cost_history,alpha_history
+
+	def predict(self,test_x,theta_get,test_y):
+		
+		ones=np.ones([test_x.shape[0],1],dtype=int)
+		self.x_test= np.append(ones,test_x,axis=1)
+		y_pred= np.matmul(self.x_test,theta_get)
+		error_pred = (abs(test_y-y_pred)/test_y)*100 
+		return y_pred,error_pred
+		
