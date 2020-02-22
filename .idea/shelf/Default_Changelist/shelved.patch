@@ -1,0 +1,17 @@
+Index: 05.Machine-Learning-AZ/Part 1 - Data Preprocessing/Code/import.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import numpy as np\nimport pandas as pd\nimport matplotlib.pyplot as pt\n\ndataset = pd.read_csv('../Data-Preprocessing/Data.csv');
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- 05.Machine-Learning-AZ/Part 1 - Data Preprocessing/Code/import.py	(revision 90ef87c7b88ddf449fff9b9218da2a760331dc83)
++++ 05.Machine-Learning-AZ/Part 1 - Data Preprocessing/Code/import.py	(date 1582381236475)
+@@ -2,4 +2,4 @@
+ import pandas as pd
+ import matplotlib.pyplot as pt
+ 
+-dataset = pd.read_csv('../Data-Preprocessing/Data.csv');
+\ No newline at end of file
++dataset = pd.read_csv('../Data-Preprocessing/Data.csv')
+\ No newline at end of file
