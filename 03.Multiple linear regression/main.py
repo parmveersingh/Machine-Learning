@@ -31,6 +31,7 @@ from FeatureScaling import FeatureScaling
 fs=FeatureScaling(x,y)
 fs_x=fs.fit_scaling_X()
 fs_y=fs.fit_scaling_Y()
+
 	
 # split into training and testing examples
 train_x=fs_x[0:int(fs_x.shape[0]*0.7),:]
@@ -51,4 +52,4 @@ alpha=0.07
 theta,cost_history,theta_history=ls.gradient(iters,alpha)
 y_pred,error_pred=ls.predict(test_x,theta,test_y)
 y_pred=fs.inverse_fit_scaling_Y(y_pred)
-print(pd.DataFrame(np.vstack([exp_y,y_pred[:,0]]),index=["Actual Values",'Predicted Values']).T)  
+print(pd.DataFrame(np.vstack([exp_y,y_pred[:,0]]),index=["Actual Values",'Predicted Values']).T)

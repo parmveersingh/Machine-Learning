@@ -12,7 +12,6 @@ class FeatureScaling:
 
 
 	def fit_scaling_X(self):
-
 		if len(self.x.shape) > 1:
 			features = self.x.shape[1]
 		else:

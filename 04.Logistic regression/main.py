@@ -42,6 +42,10 @@ pred_y=lr.pred(theta,test_x,test_y)
 pred_y=fs.rev_feature_y(pred_y)
 change_pred_y=pred_y-np.min(pred_y)
 mean_pred_y=np.mean(pred_y-np.min(pred_y))
+'''check=-np.log(pred_y)
+print(check)
+pred=np.where(check>0,0,1)
+print(pd.DataFrame(np.vstack([test_y,pred]),index=["Actual Values",'Predicted Values']).T) '''
 pred_y=np.where(change_pred_y<mean_pred_y,0,1)
 print(pd.DataFrame(np.vstack([test_y,np.around(pred_y)]),index=["Actual Values",'Predicted Values']).T) 
 
