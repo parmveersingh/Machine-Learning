@@ -1,36 +1,45 @@
 import pandas as pd
 import networkx as nx
-from dash import Dash, html, dcc, Input, Output
+from dash import Dash, html, dcc, Input, Output, State, callback_context
 import dash_cytoscape as cyto
 
 # Load required Cytoscape extensions
-cyto.load_extra_layouts()  # This loads additional layouts including dagre
+cyto.load_extra_layouts()
 
 # Initialize the Dash app
 app = Dash(__name__)
 
 def create_enhanced_dash_app(file_path):
-    # Read data
-    df = pd.read_excel(file_path)
+    # Read and store original data
+    original_df = pd.read_excel(file_path)
+    original_df.columns = ['parent', 'child']  # Ensure consistent column names
+    
+    # Initialize with full data
+    current_df = original_df.copy()
     G = nx.DiGraph()
-    G.add_edges_from(zip(df.iloc[:, 0], df.iloc[:, 1]))
+    G.add_edges_from(zip(current_df['parent'], current_df['child']))
 
     # Convert to Cytoscape elements
-    elements = []
-    for node in G.nodes():
-        node_color = '#a8e6cf' if str(node).lower().startswith('ingestion') else '#97c2fc'
-        elements.append({
-            'data': {'id': str(node), 'label': str(node)},
-            'classes': 'rectangle',
-            'style': {'background-color': node_color}
-        })
-    
-    for edge in G.edges():
-        elements.append({
-            'data': {'source': str(edge[0]), 'target': str(edge[1])}  # String IDs
-        })
+    def create_elements(df):
+        elements = []
+        all_nodes = set(df['parent']).union(set(df['child']))
+        
+        for node in all_nodes:
+            node_color = '#a8e6cf' if str(node).lower().startswith('ingestion') else '#97c2fc'
+            elements.append({
+                'data': {'id': str(node), 'label': str(node)},
+                'classes': 'rectangle',
+                'style': {'background-color': node_color}
+            })
+        
+        for _, row in df.iterrows():
+            elements.append({
+                'data': {'source': str(row['parent']), 'target': str(row['child'])}
+            })
+        
+        return elements
 
-    # Define stylesheet
+    # Define stylesheet with rounded corners
     stylesheet = [
         {
             'selector': 'node',
@@ -40,7 +49,7 @@ def create_enhanced_dash_app(file_path):
                 'text-halign': 'center',
                 'shape': 'round-rectangle',
                 'background-color': 'data(background-color)',
-                'border-color': 'data(background-color)',
+                'border-color': '#2b7ce9',
                 'border-width': 2,
                 'width': 'label',
                 'height': 'label',
@@ -51,7 +60,7 @@ def create_enhanced_dash_app(file_path):
             }
         },
         {
-            'selector': 'node[background-color = "#a8e6cf"]',  # Special style for ingestion nodes
+            'selector': 'node[background-color = "#a8e6cf"]',
             'style': {
                 'border-color': '#4CAF50',
                 'border-width': 3
@@ -76,23 +85,25 @@ def create_enhanced_dash_app(file_path):
                 'target-arrow-color': '#ff4136',
                 'source-arrow-color': '#ff4136'
             }
-        },
-        {
-            'selector': '.highlighted',
-            'style': {
-                'background-color': '#FFD700',
-                'line-color': '#FFD700',
-                'target-arrow-color': '#FFD700',
-                'transition-property': 'background-color, line-color',
-                'transition-duration': '0.5s'
-            }
         }
     ]
 
-    # Set app layout with improved controls
+    # App layout with search functionality
     app.layout = html.Div([
+        dcc.Store(id='original-data', data=original_df.to_dict('records')),
         html.Div([
             html.H3("Graph Controls"),
+            html.Label('Search Node (Parent or Child):'),
+            dcc.Input(
+                id='search-input',
+                type='text',
+                placeholder='Enter search term...',
+                style={'width': '100%'}
+            ),
+            html.Button('Search', id='search-button', n_clicks=0),
+            html.Button('Reset', id='reset-button', n_clicks=0),
+            html.Div(id='search-status', style={'margin-top': '10px'}),
+            html.Hr(),
             html.Label('Layout Algorithm:'),
             dcc.Dropdown(
                 id='layout-dropdown',
@@ -100,12 +111,11 @@ def create_enhanced_dash_app(file_path):
                     {'label': 'Hierarchical (Dagre)', 'value': 'dagre'},
                     {'label': 'Force-Directed (CoSE)', 'value': 'cose-bilkent'},
                     {'label': 'Grid', 'value': 'grid'},
-                    {'label': 'Circle', 'value': 'circle'},
-                    {'label': 'Breadthfirst', 'value': 'breadthfirst'},
-                    {'label': 'Concentric', 'value': 'concentric'}
+                    {'label': 'Circle', 'value': 'circle'}
                 ],
                 value='dagre',
-                clearable=False
+                clearable=False,
+                style={'width': '100%'}
             ),
             html.Br(),
             html.Label('Zoom Level:'),
@@ -115,73 +125,75 @@ def create_enhanced_dash_app(file_path):
                 max=2,
                 step=0.1,
                 value=1,
-                marks={i/10: str(i/10) for i in range(1, 21, 2)}
-            ),
-            html.Br(),
-            html.Label('Node Spacing:'),
-            dcc.Slider(
-                id='spacing-slider',
-                min=10,
-                max=200,
-                step=10,
-                value=50,
-                marks={i: str(i) for i in range(10, 201, 20)}
-            ),
-            html.Br(),
-            html.Label('Search Node:'),
-            dcc.Input(
-                id='node-search',
-                type='text',
-                placeholder='Enter node name...'
-            ),
-            html.Button('Highlight', id='highlight-button', n_clicks=0)
+                marks={i/10: str(i/10) for i in range(1, 21, 2)},
+                tooltip={'placement': 'bottom'}
+            )
         ], style={'width': '20%', 'display': 'inline-block', 'padding': '20px'}),
         
         html.Div([
             cyto.Cytoscape(
                 id='cytoscape',
-                elements=elements,
+                elements=create_elements(current_df),
                 stylesheet=stylesheet,
                 style={'width': '100%', 'height': '90vh'},
-                layout={'name': 'dagre', 'animate': True},
-                zoom=1,
-                minZoom=0.1,
-                maxZoom=2,
-                boxSelectionEnabled=True,
-                autolock=False,
-                autoungrabify=False,
-                autounselectify=False
+                layout={'name': 'dagre'},
+                zoom=1
             )
         ], style={'width': '75%', 'display': 'inline-block', 'height': '90vh'})
     ])
 
-    # Add callbacks for interactivity
+    # Callback for search functionality
+    @app.callback(
+        [Output('cytoscape', 'elements'),
+         Output('search-status', 'children')],
+        [Input('search-button', 'n_clicks'),
+         Input('reset-button', 'n_clicks')],
+        [State('search-input', 'value'),
+         State('original-data', 'data')]
+    )
+    def update_graph(search_clicks, reset_clicks, search_term, stored_data):
+        ctx = callback_context
+        if not ctx.triggered:
+            return create_elements(pd.DataFrame(stored_data)), "Showing full graph"
+        
+        button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        
+        if button_id == 'reset-button':
+            return create_elements(pd.DataFrame(stored_data)), "Showing full graph (reset)"
+        
+        if not search_term:
+            return create_elements(pd.DataFrame(stored_data)), "Please enter a search term"
+        
+        # Convert stored data back to DataFrame
+        full_df = pd.DataFrame(stored_data)
+        
+        # Find all rows where parent or child contains the search term (case insensitive)
+        mask = (full_df['parent'].astype(str).str.lower().str.contains(search_term.lower())) | \
+               (full_df['child'].astype(str).str.lower().str.contains(search_term.lower()))
+        
+        filtered_df = full_df[mask]
+        
+        if filtered_df.empty:
+            return create_elements(pd.DataFrame(columns=['parent', 'child'])), f"No matches found for: {search_term}"
+        
+        # Get all unique nodes in filtered results
+        all_nodes = set(filtered_df['parent']).union(set(filtered_df['child']))
+        
+        # Find all edges that connect these nodes (upstream and downstream)
+        connected_edges = full_df[
+            (full_df['parent'].isin(all_nodes)) | 
+            (full_df['child'].isin(all_nodes))
+        ]
+        
+        return create_elements(connected_edges), f"Showing results for: {search_term}"
+
+    # Existing layout and zoom callbacks
     @app.callback(
         Output('cytoscape', 'layout'),
-        [Input('layout-dropdown', 'value'),
-         Input('spacing-slider', 'value')]
+        Input('layout-dropdown', 'value')
     )
-    def update_layout(layout_value, spacing):
-        layout_config = {
-            'name': layout_value,
-            'animate': True,
-            'animationDuration': 1000
-        }
-        
-        # Add layout-specific parameters
-        if layout_value == 'dagre':
-            layout_config.update({
-                'nodeDimensionsIncludeLabels': True,
-                'spacingFactor': spacing/50
-            })
-        elif layout_value == 'cose-bilkent':
-            layout_config.update({
-                'idealEdgeLength': spacing,
-                'nodeOverlap': 20,
-                'refresh': 20
-            })
-        
-        return layout_config
+    def update_layout(layout_value):
+        return {'name': layout_value, 'animate': True}
 
     @app.callback(
         Output('cytoscape', 'zoom'),
@@ -189,45 +201,6 @@ def create_enhanced_dash_app(file_path):
     )
     def update_zoom(zoom_value):
         return zoom_value
-
-    @app.callback(
-        Output('cytoscape', 'stylesheet'),
-        Input('highlight-button', 'n_clicks'),
-        [Input('node-search', 'value'),
-         Input('cytoscape', 'tapNode')]
-    )
-    def highlight_node(n_clicks, search_term, tap_node):
-        # Create a copy of the base stylesheet
-        highlighted_stylesheet = stylesheet.copy()
-        
-        # Determine which node to highlight
-        node_id = None
-        if search_term:
-            node_id = search_term
-        elif tap_node:
-            node_id = tap_node['data']['id']
-        
-        if node_id:
-            highlighted_stylesheet.append({
-                'selector': f'node[id = "{node_id}"]',
-                'style': {
-                    'background-color': '#FFD700',
-                    'border-color': '#FF8C00',
-                    'border-width': 3
-                }
-            })
-            
-            # Also highlight edges connected to this node
-            highlighted_stylesheet.append({
-                'selector': f'edge[source = "{node_id}"], edge[target = "{node_id}"]',
-                'style': {
-                    'line-color': '#FF8C00',
-                    'target-arrow-color': '#FF8C00',
-                    'width': 2
-                }
-            })
-        
-        return highlighted_stylesheet
 
     return app
 
