@@ -6,8 +6,10 @@ import dash_cytoscape as cyto
 
 cyto.load_extra_layouts()
 
+external_css = ['/assets/graph.css']
 
-app = Dash(__name__)
+
+app = Dash(__name__, external_stylesheets=external_css)
 
 def create_enhanced_dash_app(file_path):
     
@@ -39,7 +41,6 @@ def create_enhanced_dash_app(file_path):
         
         return elements
 
-    
     stylesheet = [
         {
             'selector': 'node',
@@ -89,16 +90,28 @@ def create_enhanced_dash_app(file_path):
     ]
 
     
-    app.layout = html.Div([
+    app.layout = html.Div(style= {'font-family': 'Verdana,sans-serif', 'font-size': '15px' },children=[
         dcc.Store(id='original-data', data=original_df.to_dict('records')),
-        html.Div([
+        html.Div(id='main-form', children=[
             html.H3("Graph Controls"),
-            html.Label('Search DAG Name:'),
+            html.Label('Search Type:'),
+            dcc.Dropdown(
+                id='search-type-dropdown',
+                options=[
+                    {'label': 'Search Parents', 'value': 'parents'},
+                    {'label': 'Search Children', 'value': 'children'},
+                    {'label': 'Search Immediate Members', 'value': 'immediate'},
+                    {'label': 'Search Full Tree', 'value': 'full'}
+                ],
+                value='full',
+                clearable=False,
+                style={'width': '100%'}
+            ),
+            html.Label('Search Node:'),
             dcc.Input(
                 id='search-input',
                 type='text',
-                placeholder='Enter search term...',
-                style={'width': '100%'}
+                placeholder='Enter node name...'
             ),
             html.Button('Search', id='search-button', n_clicks=0),
             html.Button('Reset', id='reset-button', n_clicks=0),
@@ -117,7 +130,6 @@ def create_enhanced_dash_app(file_path):
                 clearable=False,
                 style={'width': '100%'}
             ),
-            html.Br(),
             html.Label('Zoom Level:'),
             dcc.Slider(
                 id='zoom-slider',
@@ -128,7 +140,7 @@ def create_enhanced_dash_app(file_path):
                 marks={i/10: str(i/10) for i in range(1, 21, 2)},
                 tooltip={'placement': 'bottom'}
             )
-        ], style={'width': '20%', 'display': 'inline-block', 'padding': '20px'}),
+        ]),
         
         html.Div([
             cyto.Cytoscape(
@@ -139,7 +151,7 @@ def create_enhanced_dash_app(file_path):
                 layout={'name': 'dagre'},
                 zoom=1
             )
-        ], style={'width': '75%', 'display': 'inline-block', 'height': '90vh'})
+        ], style={'width': '100%', 'display': 'inline-block', 'height': '90vh', 'position': 'relative'})
     ])
 
     
@@ -225,9 +237,10 @@ def create_enhanced_dash_app(file_path):
         [Input('search-button', 'n_clicks'),
          Input('reset-button', 'n_clicks')],
         [State('search-input', 'value'),
+         State('search-type-dropdown', 'value'),
          State('original-data', 'data')]
     )
-    def update_graph(search_clicks, reset_clicks, search_term, stored_data):
+    def update_graph(search_clicks, reset_clicks, search_term, search_type, stored_data):
         ctx = callback_context
         if not ctx.triggered:
             return create_elements(pd.DataFrame(stored_data)), "Showing full graph"
@@ -240,42 +253,50 @@ def create_enhanced_dash_app(file_path):
         if not search_term:
             return create_elements(pd.DataFrame(stored_data)), "Please enter a search term"
         
-        
+        # Convert stored data back to DataFrame
         full_df = pd.DataFrame(stored_data)
-        
-        
         G = nx.DiGraph()
         G.add_edges_from(zip(full_df['Source'], full_df['Target']))
         
-        
-        matched_nodes = [node for node in G.nodes if search_term.lower() in str(node).lower()]
+        # Find exact match for the node
+        matched_nodes = [node for node in G.nodes if str(node).lower() == search_term.lower()]
         
         if not matched_nodes:
-            return create_elements(pd.DataFrame(columns=['Source', 'Target'])), f"No matches found for: {search_term}"
+            return create_elements(pd.DataFrame(columns=['Source', 'Target'])), f"Node not found: {search_term}"
         
+        target_node = matched_nodes[0]
+        related_nodes = set()
+        edges_subset = set()
+
+        if search_type == 'parents':
+            # Get all ancestors
+            related_nodes.update(nx.ancestors(G, target_node))
+            related_nodes.add(target_node)
+            
+        elif search_type == 'children':
+            # Get all descendants
+            related_nodes.update(nx.descendants(G, target_node))
+            related_nodes.add(target_node)
+            
+        elif search_type == 'immediate':
+            # Get direct parents and children
+            related_nodes.add(target_node)
+            related_nodes.update(G.predecessors(target_node))
+            related_nodes.update(G.successors(target_node))
+            
+        elif search_type == 'full':
+            # Get entire connected component
+            undirected_G = G.to_undirected()
+            related_nodes.update(nx.node_connected_component(undirected_G, target_node))
         
-        def get_all_related_nodes_dfs(graph, start_nodes):
-            visited = set()
-            stack = list(start_nodes)
-            visited.update(stack)
-            while stack:
-                node = stack.pop()
-                
-                for neighbor in list(graph.successors(node)) + list(graph.predecessors(node)):
-                    if neighbor not in visited:
-                        visited.add(neighbor)
-                        stack.append(neighbor)
-            return visited
-        
-        all_related_nodes = get_all_related_nodes_dfs(G, matched_nodes)
-        
-        
+        # Get all edges between related nodes
         connected_edges = full_df[
-            (full_df['Source'].isin(all_related_nodes)) & 
-            (full_df['Target'].isin(all_related_nodes))
+            (full_df['Source'].isin(related_nodes)) & 
+            (full_df['Target'].isin(related_nodes))
         ]
         
-        return create_elements(connected_edges), f"Showing results for: {search_term}"
+        status_text = f"Showing {search_type.replace('-', ' ')} for: {search_term}"
+        return create_elements(connected_edges), status_text
 
     
     @app.callback(
