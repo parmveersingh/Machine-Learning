@@ -1,115 +1,585 @@
-#main-form {
-    background-color: #97c2fc47;
-    padding: 20px;
-    border-radius: 10px;
-    z-index: 99999;
-}
+import polars as pl
+import networkx as nx
+from dash import Dash, html, dcc, Input, Output, State, callback_context, no_update
+import dash_cytoscape as cyto
 
-.cytoscape-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 100%;
-    height: 100%;
-}
+cyto.load_extra_layouts()
 
-#cytoscape {
-    position: relative;
-    overflow: hidden;
-    width: 100% !important;
-    height: 100% !important;
-}
+external_css = ['/assets/graph.css']
 
-#graph-container[style*="display: block;"] {
-    display: flex !important;
-    justify-content: center;
-    align-items: center;
-    width: 100%;
-    height: 90vh;
-}
+app = Dash(__name__, external_stylesheets=external_css)
 
-#layout-controls {
-    display: none;
-}
 
-#graph-container[style*="display: block;"] {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 90vh;
-}
+def transform_dataframe(df: pl.DataFrame) -> pl.DataFrame:
+    mapping = df.select(["Target", "app_name"]).unique(subset="Target", keep="first")
+    return (
+        df.join(
+            mapping.rename({"app_name": "mapped_app"}),
+            left_on="Source",
+            right_on="Target",
+            how="left"
+        )
+        .with_columns(
+            pl.when(pl.col("mapped_app").is_not_null())
+            .then(pl.concat_str([pl.col("mapped_app"), pl.col("Source")], separator="_"))
+            .otherwise(pl.col("Source"))
+            .alias("transformed_source")
+        )
+        .with_columns(pl.col("Source").alias("original_source"))
+    )
 
-#button-container {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 10px;
-}
 
-#search-type-dropdown, .dash-dropdown {
-    padding: 12px 0px;
-}
+def create_enhanced_dash_app(file_path):
+    main_df = pl.read_csv(file_path, has_header=True, columns=["app_name", "dag_id", "deps_on"])
+    main_df = main_df.rename({"dag_id": "Target", "deps_on": "Source"})
+    source_transformed_df = transform_dataframe(main_df)
+    target_transformed_df = source_transformed_df.with_columns(
+        pl.concat_str([pl.col("app_name"), pl.col("Target")], separator="_").alias("transformed_target")
+    ).with_columns(pl.col("Target").alias("original_target"))
 
-.dash-input {
-    width: 94%;
-    font-family: inherit;
-    line-height: 34px;
-    padding-left: 10px;
-    padding-right: 10px;
-    margin: 12px 0px;
-    font-size: 15px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-}
+    prefix = "test-type2|test-type1"
+    target_transformed_df = target_transformed_df.with_columns(
+        pl.when(pl.col("transformed_source").str.starts_with(prefix))
+        .then(pl.lit("type_") + pl.col("transformed_source").str.slice(len(prefix) + 1))
+        .otherwise(pl.col("transformed_source"))
+        .alias("transformed_source")
+    ).with_columns(
+        pl.when(pl.col("transformed_target").str.starts_with(prefix))
+        .then(pl.lit("type_") + pl.col("transformed_target").str.slice(len(prefix) + 1))
+        .otherwise(pl.col("transformed_target"))
+        .alias("transformed_target")
+    )
 
-#reset-button, #search-button {
-    background-color: #c1ffd861;
-    border-radius: 100px;
-    box-shadow: rgba(44, 187, 99, .2) 0 -25px 18px -14px inset, 
-                rgba(44, 187, 99, .15) 0 1px 2px, 
-                rgba(44, 187, 99, .15) 0 2px 4px, 
-                rgba(44, 187, 99, .15) 0 4px 8px, 
-                rgba(44, 187, 99, .15) 0 8px 16px, 
-                rgba(44, 187, 99, .15) 0 16px 32px;
-    color: green;
-    cursor: pointer;
-    flex: 1;
-    margin: 0 5px;
-    padding: 7px 20px;
-    text-align: center;
-    text-decoration: none;
-    transition: all 250ms;
-    border: 0;
-    font-size: 16px;
-    user-select: none;
-    -webkit-user-select: none;
-    touch-action: manipulation;
-}
+    original_df = target_transformed_df.select([
+        "transformed_source", "transformed_target",
+        "original_source", "original_target",
+        "app_name"
+    ]).rename({
+        "transformed_source": "Source",
+        "transformed_target": "Target"
+    })
+    current_df = original_df.clone()
+    G = nx.DiGraph()
 
-#search-button {
-    margin-right: 10px;
-}
+    G.add_edges_from(zip(current_df["Source"], current_df["Target"]))
 
-#search-status {
-    font-family: inherit;
-    margin: 12px 0px;
-    color: #ca4545;
-}
+    def create_elements(df):
+        elements = []
+        all_nodes = set(df["Source"].to_list() + df["Target"].to_list())
 
-input, select {
-    background-color: #FFFFFF !important;
-}
+        for node in all_nodes:
+            orig_name = None
+            if df.filter(pl.col("Source") == node)["original_source"].is_not_null().any():
+                orig_name = df.filter(pl.col("Source") == node)["original_source"][0]
+            elif df.filter(pl.col("Target") == node)["original_target"].is_not_null().any():
+                orig_name = df.filter(pl.col("Target") == node)["original_target"][0]
+            node_color = '#ffd5bc' if str(node).lower().startswith('test-type1_') else '#97c2fc' if str(node).lower().startswith('test-type2_')\
+                else '#f9f39c' if str(node).lower().startswith('type_') else '#a8e6cf'
+            elements.append({
+                'data': {
+                    'id': str(node),
+                    'label': str(node),
+                    'original_name': str(orig_name) if orig_name else str(node)
+                },
+                'classes': 'rectangle',
+                'style': {'background-color': node_color}
+            })
 
-#zoom-slider {
-    padding: 12px 0px 25px 10px !important;
-}
+        for row in df.iter_rows(named=True):
+            elements.append({
+                'data': {'source': str(row['Source']), 'target': str(row['Target'])}
+            })
 
-#layout-dropdown .Select-menu-outer {
-    overflow: scroll;
-    height: 100px;
-}
+        return elements
 
-#cytoscape {
-    width: 100% !important;
-    height: 100% !important;
-}
+    stylesheet = [
+        {
+            'selector': 'node',
+            'style': {
+                'content': 'data(label)',
+                'text-valign': 'center',
+                'text-halign': 'center',
+                'shape': 'round-rectangle',
+                'background-color': 'data(background-color)',
+                'border-color': '#2b7ce9',
+                'border-width': 2,
+                'width': 'label',
+                'height': 'label',
+                'padding': '10px',
+                'text-wrap': 'wrap',
+                'text-max-width': '100px',
+                'border-radius': '10px'
+            }
+        },
+        {
+            'selector': 'node[background-color = "#a8e6cf"]',
+            'style': {
+                'border-color': '#4CAF50',
+                'border-width': 3
+            }
+        },
+        {
+            'selector': 'edge',
+            'style': {
+                'curve-style': 'bezier',
+                'target-arrow-shape': 'triangle',
+                'arrow-scale': 1.5,
+                'width': 1,
+                'line-color': '#9dbaea',
+                'target-arrow-color': '#9dbaea'
+            }
+        },
+        {
+            'selector': ':selected',
+            'style': {
+                'background-color': '#ff4136',
+                'line-color': '#ff4136',
+                'target-arrow-color': '#ff4136',
+                'source-arrow-color': '#ff4136'
+            }
+        }
+    ]
+
+    app.layout = html.Div(style={'font-family': 'Verdana,sans-serif', 'font-size': '15px'}, children=[
+        dcc.Store(id='original-data', data=original_df.to_dict(as_series=False)),
+        dcc.Store(id='initial-state', data={'searched': False}),
+        dcc.Location(id='url', refresh=True),
+
+
+        html.Div(
+            id='alert-dialog',
+            children=[
+                html.Div(
+                    [
+                        html.H3("Alert", style={'margin-top': '0', 'color': '#2b7ce9'}),
+                        html.Div(id='alert-message', style={'margin': '20px 0'}),
+                        html.Button(
+                            'OK',
+                            id='alert-ok-button',
+                            n_clicks=0,
+                            style={
+                                'background-color': '#2b7ce9',
+                                'color': 'white',
+                                'border': 'none',
+                                'padding': '10px 20px',
+                                'border-radius': '5px',
+                                'cursor': 'pointer',
+                                'font-size': '15px'
+                            }
+                        )
+                    ],
+                    style={
+                        'background-color': 'white',
+                        'padding': '20px',
+                        'border-radius': '10px',
+                        'box-shadow': '0 4px 8px rgba(0,0,0,0.2)',
+                        'text-align': 'center',
+                        'width': '300px'
+                    }
+                )
+            ],
+            style={
+                'position': 'fixed',
+                'top': '0',
+                'left': '0',
+                'width': '100%',
+                'height': '100%',
+                'background-color': 'rgba(0,0,0,0.5)',
+                'display': 'flex',
+                'justify-content': 'center',
+                'align-items': 'center',
+                'z-index': '100000',
+                'display': 'none'
+            }
+        ),
+
+
+        html.Div(id='main-form', children=[
+            html.H3("DAG Search"),
+            html.Label('Search Type:'),
+            dcc.Dropdown(
+                id='search-type-dropdown',
+                options=[
+                    {'label': 'Search Parents', 'value': 'parents'},
+                    {'label': 'Search Children', 'value': 'children'},
+                    {'label': 'Search Immediate Members', 'value': 'immediate'},
+                    {'label': 'Search Full Tree', 'value': 'full'}
+                ],
+                value='full',
+                clearable=False,
+                style={'width': '100%'}
+            ),
+            html.Label('Search Node:'),
+            dcc.Input(
+                id='search-input',
+                type='text',
+                placeholder='Enter node name...'
+            ),
+
+            html.Div([
+                html.Button('Search', id='search-button', n_clicks=0,
+                            style={'width': '48%', 'margin-right': '4%'}),
+                html.Button('Reset', id='reset-button', n_clicks=0,
+                            style={'display': 'none', 'width': '48%'})
+            ], style={'display': 'flex', 'justify-content': 'space-between'}),
+
+            html.Div(id='search-status', style={'margin-top': '10px'}),
+
+
+            html.Div(id='layout-controls', children=[
+                html.Hr(),
+                html.Label('Layout Algorithm:'),
+                dcc.Dropdown(
+                    id='layout-dropdown',
+                    options=[
+                        {'label': 'Grid', 'value': 'grid'},
+                        {'label': 'Hierarchical', 'value': 'dagre'},
+                        {'label': 'Force-Directed', 'value': 'cose-bilkent'},
+                        {'label': 'Circle', 'value': 'circle'}
+                    ],
+                    value='grid',
+                    clearable=False,
+                    style={'width': '100%'}
+                ),
+                html.Label('Zoom Level:'),
+                dcc.Slider(
+                    id='zoom-slider',
+                    min=0.1,
+                    max=2,
+                    step=0.1,
+                    value=1,
+                    marks={i / 10: str(i / 10) for i in range(1, 21, 2)},
+                    tooltip={'placement': 'bottom'}
+                )
+            ], style={'display': 'none'})
+        ], style={
+            'position': 'fixed',
+            'top': '50%',
+            'left': '50%',
+            'transform': 'translate(-50%, -50%)',
+            'padding': '20px',
+            'background-color': '#97c2fc47',
+            'border-radius': '10px',
+            'z-index': '99999',
+            'transition': 'all 0.5s ease'
+        }),
+
+
+        html.Div(id='graph-container', children=[
+            cyto.Cytoscape(
+                id='cytoscape',
+                elements=create_elements(current_df),
+                stylesheet=stylesheet,
+                style={'width': '100%', 'height': '90vh'},
+                layout={'name': 'grid'},
+                zoom=1
+            )
+        ], style={'display': 'none', 'width': '100%', 'height': '90vh'})
+    ])
+
+    @app.callback(
+        [Output('main-form', 'style'),
+         Output('graph-container', 'style'),
+         Output('layout-controls', 'style'),
+         Output('initial-state', 'data'),
+         Output('reset-button', 'style'),
+         Output('search-input', 'value')],
+        [Input('search-button', 'n_clicks'),
+         Input('reset-button', 'n_clicks')],
+        [State('initial-state', 'data'),
+         State('search-input', 'value')]
+    )
+    def handle_ui_transition(search_clicks, reset_clicks, state, search_term):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update, no_update, no_update, no_update, no_update
+
+        button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+        if button_id == 'reset-button' or not search_term:
+            return (
+                {
+                    'position': 'fixed',
+                    'top': '50%',
+                    'left': '50%',
+                    'transform': 'translate(-50%, -50%)',
+                    'padding': '20px',
+                    'background-color': '#97c2fc47',
+                    'border-radius': '10px',
+                    'z-index': '99999',
+                    'transition': 'all 0.5s ease'
+                },
+                {'display': 'none', 'width': '100%', 'height': '90vh'},
+                {'display': 'none'},
+                {'searched': False},
+                {'display': 'none', 'width': '48%'},
+                ''
+            )
+
+        elif button_id == 'search-button' and search_term:
+            return (
+                {
+                    'width': '20%',
+                    'padding': '20px',
+                    'background-color': '#97c2fc47',
+                    'bottom': '10px',
+                    'left': '10px',
+                    'position': 'absolute',
+                    'border-radius': '10px',
+                    'z-index': '99999',
+                    'transition': 'all 0.5s ease'
+                },
+                {'display': 'block', 'width': '100%', 'height': '90vh'},
+                {'display': 'block'},
+                {'searched': True},
+                {'display': 'block', 'width': '48%'},
+                search_term
+            )
+
+        return no_update, no_update, no_update, state, no_update, no_update
+
+    @app.callback(
+        Output('cytoscape', 'stylesheet'),
+        [Input('cytoscape', 'tapNode'),
+         Input('reset-button', 'n_clicks')],
+        [State('original-data', 'data')]
+    )
+    def highlight_parents(tap_node, reset_clicks, stored_data):
+        ctx = callback_context
+        if not ctx.triggered or ctx.triggered[0]['prop_id'] == 'reset-button.n_clicks':
+            return stylesheet
+
+        if not tap_node:
+            return stylesheet
+
+        full_df = pl.DataFrame(stored_data)
+        G = nx.DiGraph()
+        G.add_edges_from(zip(full_df["Source"], full_df["Target"]))
+
+        selected_node = tap_node['data']['id']
+        ancestors = set()
+        path_edges = set()
+
+        def get_parents_and_edges(node):
+            for predecessor in G.predecessors(node):
+                edge = (predecessor, node)
+                if edge not in path_edges:
+                    path_edges.add(edge)
+                    ancestors.add(predecessor)
+                    get_parents_and_edges(predecessor)
+
+        get_parents_and_edges(selected_node)
+
+        dynamic_stylesheet = stylesheet.copy()
+
+        dynamic_stylesheet.append({
+            'selector': f'node[id = "{selected_node}"]',
+            'style': {
+                'background-color': '#ff4136',
+                'border-color': '#ff0000',
+                'border-width': 3,
+                'z-index': 9999
+            }
+        })
+
+        for ancestor in ancestors:
+            dynamic_stylesheet.append({
+                'selector': f'node[id = "{ancestor}"]',
+                'style': {
+                    'background-color': '#ffcc00',
+                    'border-color': '#ff9900',
+                    'border-width': 3,
+                    'z-index': 9998
+                }
+            })
+
+        for edge in path_edges:
+            source, target = edge
+            dynamic_stylesheet.append({
+                'selector': f'edge[source = "{source}"][target = "{target}"]',
+                'style': {
+                    'line-color': '#ff9900',
+                    'target-arrow-color': '#ff9900',
+                    'width': 3
+                }
+            })
+
+        return dynamic_stylesheet
+
+    @app.callback(
+        [Output('cytoscape', 'elements'),
+         Output('search-status', 'children'),
+         Output('alert-dialog', 'style'),
+         Output('alert-message', 'children')],
+        [Input('search-button', 'n_clicks'),
+         Input('reset-button', 'n_clicks')],
+        [State('search-input', 'value'),
+         State('search-type-dropdown', 'value'),
+         State('original-data', 'data')]
+    )
+    def update_graph(search_clicks, reset_clicks, search_term, search_type, stored_data):
+        ctx = callback_context
+        if not ctx.triggered:
+            return create_elements(pl.DataFrame(stored_data)), "", no_update, no_update
+
+        button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+        if button_id == 'reset-button':
+            return create_elements(pl.DataFrame(stored_data)), "", no_update, no_update
+
+        if not search_term:
+            return create_elements(pl.DataFrame(stored_data)), "Please enter a search term", no_update, no_update
+
+        full_df = pl.DataFrame(stored_data)
+        G = nx.DiGraph()
+        G.add_edges_from(zip(full_df["Source"], full_df["Target"]))
+
+        node_original_map = {}
+        for row in full_df.iter_rows(named=True):
+            if 'original_source' in row and row['original_source'] is not None:
+                node_original_map[row['Source']] = row['original_source']
+            if 'original_target' in row and row['original_target'] is not None:
+                node_original_map[row['Target']] = row['original_target']
+
+        search_term_lower = search_term.lower()
+        matched_nodes = set()
+
+        for node in G.nodes:
+            node_str = str(node)
+            node_lower = node_str.lower()
+
+            if node_lower == search_term_lower:
+                matched_nodes.add(node_str)
+                continue
+
+            if node in node_original_map:
+                orig_name = str(node_original_map[node]).lower()
+                if orig_name == search_term_lower:
+                    matched_nodes.add(node_str)
+                    continue
+
+            clean_node = node_lower.replace("test-type1_", "").replace("test-type2_", "").replace(
+                "test-type1|test-type2_", "")
+            if clean_node == search_term_lower:
+                matched_nodes.add(node_str)
+                continue
+
+            base_name = None
+            if search_term_lower.startswith("test-type1_") or search_term_lower.startswith("test-type2_"):
+                base_name = search_term_lower.split('_', 1)[1]
+
+            if base_name and node_lower == f"type_{base_name}":
+                matched_nodes.add(node_str)
+                continue
+
+        matched_nodes = list(matched_nodes)
+
+        if not matched_nodes:
+            alert_style = {
+                'position': 'fixed',
+                'top': '0',
+                'left': '0',
+                'width': '100%',
+                'height': '100%',
+                'background-color': 'rgba(0,0,0,0.5)',
+                'display': 'flex',
+                'justify-content': 'center',
+                'align-items': 'center',
+                'z-index': '100000'
+            }
+            return ([], f"DAG not found: {search_term}",
+                    alert_style,
+                    f"DAG not found: {search_term}")
+
+        target_node = matched_nodes[0]
+        related_nodes = set()
+        edges_subset = set()
+
+        if search_type == 'parents':
+            related_nodes.update(nx.ancestors(G, target_node))
+            related_nodes.add(target_node)
+
+        elif search_type == 'children':
+            related_nodes.update(nx.descendants(G, target_node))
+            related_nodes.add(target_node)
+
+        elif search_type == 'immediate':
+            related_nodes.add(target_node)
+            related_nodes.update(G.predecessors(target_node))
+            related_nodes.update(G.successors(target_node))
+
+        elif search_type == 'full':
+            undirected_G = G.to_undirected()
+            related_nodes.update(nx.node_connected_component(undirected_G, target_node))
+
+        connected_edges = full_df.filter(
+            (pl.col("Source").is_in(related_nodes)) &
+            (pl.col("Target").is_in(related_nodes))
+        )
+
+        if len(related_nodes) == 1 and connected_edges.is_empty():
+            alert_style = {
+                'position': 'fixed',
+                'top': '0',
+                'left': '0',
+                'width': '100%',
+                'height': '100%',
+                'background-color': 'rgba(0,0,0,0.5)',
+                'display': 'flex',
+                'justify-content': 'center',
+                'align-items': 'center',
+                'z-index': '100000'
+            }
+            return ([], f"No {search_type} for {search_term}",
+                    alert_style,
+                    f"No {search_type} for {search_term}")
+
+        status_text = f"Showing {search_type.replace('_', ' ')} for: {search_term}"
+        return create_elements(connected_edges), status_text, no_update, no_update
+
+    @app.callback(
+        Output('url', 'refresh'),
+        [Input('alert-ok-button', 'n_clicks')],
+        prevent_initial_call=True
+    )
+    def refresh_on_ok(n_clicks):
+        if n_clicks:
+            return True
+        return no_update
+
+    @app.callback(
+        Output('cytoscape', 'layout'),
+        Input('layout-dropdown', 'value')
+    )
+    def update_layout(layout_value):
+        return {'name': layout_value, 'animate': True}
+
+    @app.callback(
+        Output('cytoscape', 'zoom'),
+        Input('zoom-slider', 'value')
+    )
+    def update_zoom(zoom_value):
+        return zoom_value
+
+    app.clientside_callback(
+        """
+        function(n_clicks) {
+            if (n_clicks > 0) {
+                document.getElementById('alert-dialog').style.display = 'none';
+                setTimeout(function() {
+                    window.location.reload();
+                }, 100);
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('alert-ok-button', 'n_clicks'),
+        Input('alert-ok-button', 'n_clicks')
+    )
+
+    return app
+
+
+if __name__ == '__main__':
+    app = create_enhanced_dash_app("dag_deps_list_asof_9_76_testing.csv")
+    app.run(debug=True)
