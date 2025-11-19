@@ -1,75 +1,185 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AWS Glue Catalog File Downloader</title>
-    <link href="<https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css>" rel="stylesheet">
-    <style>
-        .loading {
-            display: none;
-            color: #6c757d;
+// DOM elements
+const databaseSelect = document.getElementById('databaseSelect');
+const tableSelect = document.getElementById('tableSelect');
+const s3LocationDiv = document.getElementById('s3Location');
+const downloadBtn = document.getElementById('downloadBtn');
+
+// Loading and error elements
+const databaseLoading = document.getElementById('databaseLoading');
+const databaseError = document.getElementById('databaseError');
+const tableLoading = document.getElementById('tableLoading');
+const tableError = document.getElementById('tableError');
+const downloadLoading = document.getElementById('downloadLoading');
+const downloadError = document.getElementById('downloadError');
+const downloadSuccess = document.getElementById('downloadSuccess');
+
+// Current state
+let currentS3Path = '';
+
+// Initialize the application
+document.addEventListener('DOMContentLoaded', function() {
+    loadDatabases();
+
+    // Event listeners
+    databaseSelect.addEventListener('change', function() {
+        const databaseName = this.value;
+        if (databaseName) {
+            loadTables(databaseName);
+        } else {
+            resetTableSelection();
+            resetS3Location();
         }
-        .error-message {
-            color: #dc3545;
-            display: none;
+    });
+
+    tableSelect.addEventListener('change', function() {
+        const selectedOption = this.options[this.selectedIndex];
+        if (selectedOption && selectedOption.dataset.location) {
+            currentS3Path = selectedOption.dataset.location;
+            s3LocationDiv.textContent = currentS3Path;
+            s3LocationDiv.style.color = '#000';
+            downloadBtn.disabled = false;
+        } else {
+            resetS3Location();
         }
-        #s3Location {
-            background-color: #f8f9fa;
-            font-family: monospace;
+    });
+
+    downloadBtn.addEventListener('click', function() {
+        if (currentS3Path) {
+            downloadFiles(currentS3Path);
         }
-    </style>
-</head>
-<body>
-    <div class="container mt-5">
-        <div class="row">
-            <div class="col-md-8 offset-md-2">
-                <h1 class="mb-4">AWS Glue Catalog File Downloader</h1>
+    });
+});
 
-                <!-- Database Selection -->
-                <div class="mb-3">
-                    <label for="databaseSelect" class="form-label">Select Database:</label>
-                    <select class="form-select" id="databaseSelect">
-                        <option value="">-- Select a Database --</option>
-                    </select>
-                    <div id="databaseLoading" class="loading mt-1">Loading databases...</div>
-                    <div id="databaseError" class="error-message mt-1"></div>
-                </div>
+function loadDatabases() {
+    showElement(databaseLoading);
+    hideElement(databaseError);
 
-                <!-- Table Selection -->
-                <div class="mb-3">
-                    <label for="tableSelect" class="form-label">Select Table:</label>
-                    <select class="form-select" id="tableSelect" disabled>
-                        <option value="">-- First select a database --</option>
-                    </select>
-                    <div id="tableLoading" class="loading mt-1">Loading tables...</div>
-                    <div id="tableError" class="error-message mt-1"></div>
-                </div>
+    fetch('/api/databases')
+        .then(response => response.json())
+        .then(data => {
+            hideElement(databaseLoading);
 
-                <!-- S3 Location Display -->
-                <div class="mb-3">
-                    <label class="form-label">S3 Location:</label>
-                    <div id="s3Location" class="p-3 border rounded">
-                        No table selected
-                    </div>
-                </div>
+            if (data.error) {
+                showError(databaseError, data.error);
+                return;
+            }
 
-                <!-- Download Button -->
-                <div class="mb-3">
-                    <button id="downloadBtn" class="btn btn-primary" disabled>
-                        Download Files
-                    </button>
-                    <div id="downloadLoading" class="loading mt-1">Preparing download...</div>
-                    <div id="downloadError" class="error-message mt-1"></div>
-                    <div id="downloadSuccess" class="text-success mt-1" style="display: none;">
-                        Download started successfully!
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+            // Populate database dropdown
+            databaseSelect.innerHTML = '<option value="">-- Select a Database --</option>';
+            data.databases.forEach(db => {
+                const option = document.createElement('option');
+                option.value = db;
+                option.textContent = db;
+                databaseSelect.appendChild(option);
+            });
+        })
+        .catch(error => {
+            hideElement(databaseLoading);
+            showError(databaseError, `Failed to load databases: ${error.message}`);
+        });
+}
 
-    <script src="<https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js>"></script>
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
-</body>
-</html>
+function loadTables(databaseName) {
+    // Reset table selection
+    resetTableSelection();
+    tableSelect.disabled = true;
+
+    showElement(tableLoading);
+    hideElement(tableError);
+
+    fetch(`/api/tables/${encodeURIComponent(databaseName)}`)
+        .then(response => response.json())
+        .then(data => {
+            hideElement(tableLoading);
+            tableSelect.disabled = false;
+
+            if (data.error) {
+                showError(tableError, data.error);
+                return;
+            }
+
+            // Populate table dropdown
+            tableSelect.innerHTML = '<option value="">-- Select a Table --</option>';
+            data.tables.forEach(table => {
+                const option = document.createElement('option');
+                option.value = table.name;
+                option.textContent = table.name;
+                option.dataset.location = table.location;
+                tableSelect.appendChild(option);
+            });
+        })
+        .catch(error => {
+            hideElement(tableLoading);
+            tableSelect.disabled = false;
+            showError(tableError, `Failed to load tables: ${error.message}`);
+        });
+}
+
+function downloadFiles(s3Path) {
+    showElement(downloadLoading);
+    hideElement(downloadError);
+    hideElement(downloadSuccess);
+
+    fetch('/api/download_files', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ s3_path: s3Path })
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.error || 'Download failed');
+            });
+        }
+        return response.blob();
+    })
+    .then(blob => {
+        hideElement(downloadLoading);
+
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = 's3_files.zip';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        showElement(downloadSuccess);
+        setTimeout(() => hideElement(downloadSuccess), 3000);
+    })
+    .catch(error => {
+        hideElement(downloadLoading);
+        showError(downloadError, `Download failed: ${error.message}`);
+    });
+}
+
+function resetTableSelection() {
+    tableSelect.innerHTML = '<option value="">-- First select a database --</option>';
+    tableSelect.disabled = true;
+    resetS3Location();
+}
+
+function resetS3Location() {
+    s3LocationDiv.textContent = 'No table selected';
+    s3LocationDiv.style.color = '#6c757d';
+    downloadBtn.disabled = true;
+    currentS3Path = '';
+}
+
+function showElement(element) {
+    element.style.display = 'block';
+}
+
+function hideElement(element) {
+    element.style.display = 'none';
+}
+
+function showError(element, message) {
+    element.textContent = message;
+    element.style.display = 'block';
+}
