@@ -1,98 +1,129 @@
-from dash.exceptions import PreventUpdate
+import os
+import boto3
+from flask import Flask, render_template, request, jsonify, send_file
+from botocore.exceptions import ClientError, NoCredentialsError
+import zipfile
+import tempfile
+from urllib.parse import urlparse
 
+app = Flask(__name__)
 
+# Initialize AWS clients
+def get_glue_client():
+    """Initialize and return Glue client using AWS credentials"""
+    # AWS best practice: uses IAM roles, environment variables, or ~/.aws/credentials
+    return boto3.client('glue')
 
-        html.Div(id='graph-container', children=[
-            html.Div(
-                id='download-container',
-                children=[
-                    html.Button(
-                        [
-                            html.Img(
-                                src=f"/assets/download_icon.png",
-                                style={
-                                    'width': '16px',
-                                    'height': '16px',
-                                    'margin-right': '8px',
-                                    'filter': 'invert(100%)'
-                                }
-                            ),
-                            " Export Nodes"
-                        ],
-                        id='download-button',
-                        n_clicks=0,
-                        style={
-                            'position': 'absolute',
-                            'top': '15px',
-                            'right': '15px',
-                            'zIndex': 10000,
-                            'display': 'flex',
-                            'align-items': 'center',
-                            'gap': '8px',
-                        }
-                    ),
-                    dcc.Download(id="download-nodes")
-                ],
-                style={'position': 'absolute', 'top': '0', 'right': '0', 'zIndex': 10000}
-            ),
-            cyto.Cytoscape(
-                id='cytoscape',
-                elements=create_elements(current_df),
-                stylesheet=stylesheet,
-                style={'width': '100%', 'height': '90vh'},
-                layout={'name': 'grid'},
-                zoom=1
-            )
-        ], style={'display': 'none', 'width': '100%', 'height': '90vh', 'position': 'relative'})
-    ])
+def get_s3_client():
+    """Initialize and return S3 client using AWS credentials"""
+    return boto3.client('s3')
 
-   
-    @app.callback(
-        Output('download-nodes', 'data'),
-        [Input('download-button', 'n_clicks')],
-        [State('cytoscape', 'elements')]
-    )
-    def download_nodes(n_clicks, elements):
-        if n_clicks is None or n_clicks == 0:
-            raise PreventUpdate
+@app.route('/')
+def index():
+    """Render the main page"""
+    return render_template('index.html')
 
-        nodes = [elem for elem in elements if 'source' not in elem['data']]
-        node_labels = [node['data']['label'] for node in nodes]
+@app.route('/api/databases')
+def get_databases():
+    """API endpoint to fetch all Glue databases"""
+    try:
+        glue_client = get_glue_client()
+        response = glue_client.get_databases()
 
-        if not node_labels:
-            raise PreventUpdate
+        databases = [db['Name'] for db in response['DatabaseList']]
+        return jsonify({'databases': databases})
 
-        csv_content = "Node Name\n" + "\n".join(node_labels)
+    except (ClientError, NoCredentialsError) as e:
+        error_msg = f"AWS API error: {str(e)}"
+        return jsonify({'error': error_msg}), 500
+    except Exception as e:
+        return jsonify({'error': f"Unexpected error: {str(e)}'}), 500
 
-        return dict(content=csv_content, filename="nodes_list.csv")
+@app.route('/api/tables/<database_name>')
+def get_tables(database_name):
+    """API endpoint to fetch tables for a specific database"""
+    try:
+        glue_client = get_glue_client()
+        response = glue_client.get_tables(DatabaseName=database_name)
 
+        tables = []
+        for table in response['TableList']:
+            table_info = {
+                'name': table['Name'],
+                'location': table.get('StorageDescriptor', {}).get('Location', 'No location found')
+            }
+            tables.append(table_info)
 
-    
-    
-    #download-button {
-    background-color: #2b7ce9;
-    color: white;
-    border: none;
-    padding: 10px 15px;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 15px;
-    font-family: Verdana, sans-serif;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
+        return jsonify({'tables': tables})
 
-#download-button:hover {
-    background-color: #1a5cb0;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-}
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code == 'EntityNotFoundException':
+            return jsonify({'error': f"Database '{database_name}' not found"}), 404
+        else:
+            return jsonify({'error': f"AWS Glue error: {str(e)}"}), 500
+    except Exception as e:
+        return jsonify({'error': f"Unexpected error: {str(e)}"}), 500
 
-#download-button:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-}
+@app.route('/api/download_files', methods=['POST'])
+def download_files():
+    """API endpoint to download all files from an S3 path"""
+    try:
+        data = request.get_json()
+        s3_path = data.get('s3_path')
 
+        if not s3_path:
+            return jsonify({'error': 'S3 path is required'}), 400
+
+        # Parse S3 path (supports both s3://bucket/path and virtual-hosted style)
+        if s3_path.startswith('s3://'):
+            parsed = urlparse(s3_path)
+            bucket_name = parsed.netloc
+            prefix = parsed.path.lstrip('/')
+        else:
+            # Try to parse as virtual-hosted style
+            parts = s3_path.replace('https://', '').split('.s3.')
+            if len(parts) > 1:
+                bucket_name = parts[0]
+                path_parts = parts[1].split('/')
+                prefix = '/'.join(path_parts[1:]) if len(path_parts) > 1 else ''
+            else:
+                return jsonify({'error': f"Invalid S3 path format: {s3_path}"}), 400
+
+        # Create a temporary zip file
+        temp_dir = tempfile.mkdtemp()
+        zip_filename = os.path.join(temp_dir, 'download.zip')
+
+        s3_client = get_s3_client()
+
+        with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            paginator = s3_client.get_paginator('list_objects_v2')
+            page_iterator = paginator.paginate(Bucket=bucket_name, Prefix=prefix)
+
+            for page in page_iterator:
+                if 'Contents' in page:
+                    for obj in page['Contents']:
+                        key = obj['Key']
+                        if not key.endswith('/'):  # Skip directories
+                            # Download file content
+                            response = s3_client.get_object(Bucket=bucket_name, Key=key)
+                            file_content = response['Body'].read()
+
+                            # Preserve folder structure in zip
+                            local_path = key
+                            zipf.writestr(local_path, file_content)
+
+        return send_file(zip_filename,
+                        as_attachment=True,
+                        download_name='s3_files.zip',
+                        mimetype='application/zip')
+
+    except ClientError as e:
+        return jsonify({'error': f"AWS S3 error: {str(e)}"}), 500
+    except Exception as e:
+        return jsonify({'error': f"Download error: {str(e)}"}), 500
+
+if __name__ == '__main__':
+    # Create downloads directory if it doesn't exist
+    os.makedirs('downloads', exist_ok=True)
+    app.run(debug=True, host='127.0.0.1', port=5000)
