@@ -1,303 +1,77 @@
-// DOM elements
-const databaseDropdown = document.getElementById('databaseDropdown');
-const databaseText = document.getElementById('databaseText');
-const databaseSearch = document.getElementById('databaseSearch');
-const databaseList = document.getElementById('databaseList');
-const tableDropdown = document.getElementById('tableDropdown');
-const tableText = document.getElementById('tableText');
-const tableSearch = document.getElementById('tableSearch');
-const tableList = document.getElementById('tableList');
-const s3LocationDiv = document.getElementById('s3Location');
-const downloadBtn = document.getElementById('downloadBtn');
-
-// Loading and error elements
-const databaseLoading = document.getElementById('databaseLoading');
-const databaseError = document.getElementById('databaseError');
-const tableLoading = document.getElementById('tableLoading');
-const tableError = document.getElementById('tableError');
-const downloadLoading = document.getElementById('downloadLoading');
-const downloadError = document.getElementById('downloadError');
-const downloadSuccess = document.getElementById('downloadSuccess');
-
-// Current state
-let currentS3Path = '';
-let allDatabases = [];
-let allTables = [];
-let selectedDatabase = '';
-
-// Initialize the application
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('Page loaded, initializing application...');
-    loadDatabases();
-    
-    // Database dropdown events
-    databaseSearch.addEventListener('input', function() {
-        filterDropdown('database', this.value);
-    });
-    
-    // Table dropdown events
-    tableSearch.addEventListener('input', function() {
-        filterDropdown('table', this.value);
-    });
-    
-    // Download button
-    downloadBtn.addEventListener('click', function() {
-        if (currentS3Path) {
-            console.log('Download initiated for:', currentS3Path);
-            downloadFiles(currentS3Path);
-        }
-    });
-});
-
-function loadDatabases() {
-    console.log('Loading databases from API...');
-    
-    databaseDropdown.disabled = true;
-    databaseText.textContent = 'Loading databases...';
-    showElement(databaseLoading);
-    hideElement(databaseError);
-    
-    fetch('/api/databases')
-        .then(response => {
-            console.log('Database API response status:', response.status);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            console.log('Database API response data:', data);
-            hideElement(databaseLoading);
-            databaseDropdown.disabled = false;
-            
-            if (data.error) {
-                showError(databaseError, data.error);
-                databaseText.textContent = 'Error loading databases';
-                return;
-            }
-            
-            // Store all databases and populate dropdown
-            allDatabases = data.databases || [];
-            populateDropdown('database', allDatabases);
-            console.log(`Loaded ${allDatabases.length} databases`);
-        })
-        .catch(error => {
-            hideElement(databaseLoading);
-            databaseDropdown.disabled = false;
-            databaseText.textContent = 'Error loading databases';
-            const errorMsg = `Failed to load databases: ${error.message}`;
-            showError(databaseError, errorMsg);
-            console.error('Database fetch error:', error);
-        });
-}
-
-function loadTables(databaseName) {
-    selectedDatabase = databaseName;
-    
-    // Reset table selection
-    resetTableSelection();
-    tableDropdown.disabled = true;
-    tableText.textContent = 'Loading tables...';
-    
-    console.log(`Loading tables for database: ${databaseName}`);
-    showElement(tableLoading);
-    hideElement(tableError);
-    
-    fetch(`/api/tables/${encodeURIComponent(databaseName)}`)
-        .then(response => {
-            console.log('Tables API response status:', response.status);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            console.log('Tables API response data:', data);
-            hideElement(tableLoading);
-            tableDropdown.disabled = false;
-            
-            if (data.error) {
-                showError(tableError, data.error);
-                tableText.textContent = 'Error loading tables';
-                return;
-            }
-            
-            // Store all tables and populate dropdown
-            allTables = data.tables || [];
-            const tableNames = allTables.map(table => table.name);
-            populateDropdown('table', tableNames);
-            console.log(`Loaded ${allTables.length} tables`);
-        })
-        .catch(error => {
-            hideElement(tableLoading);
-            tableDropdown.disabled = false;
-            tableText.textContent = 'Error loading tables';
-            const errorMsg = `Failed to load tables: ${error.message}`;
-            showError(tableError, errorMsg);
-            console.error('Tables fetch error:', error);
-        });
-}
-
-function populateDropdown(type, items) {
-    const listElement = type === 'database' ? databaseList : tableList;
-    const searchElement = type === 'database' ? databaseSearch : tableSearch;
-    
-    // Clear existing items
-    listElement.innerHTML = '';
-    
-    if (items.length === 0) {
-        const noResults = document.createElement('div');
-        noResults.className = 'no-results';
-        noResults.textContent = 'No items found';
-        listElement.appendChild(noResults);
-        return;
-    }
-    
-    // Add items to dropdown
-    items.forEach(item => {
-        const itemElement = document.createElement('div');
-        itemElement.className = 'dropdown-item';
-        itemElement.textContent = item;
-        itemElement.addEventListener('click', function() {
-            handleDropdownSelection(type, item);
-            // Hide the dropdown
-            const dropdown = type === 'database' ? databaseDropdown : tableDropdown;
-            const bsDropdown = bootstrap.Dropdown.getInstance(dropdown);
-            if (bsDropdown) {
-                bsDropdown.hide();
-            }
-        });
-        listElement.appendChild(itemElement);
-    });
-    
-    // Reset search
-    searchElement.value = '';
-}
-
-function filterDropdown(type, searchTerm) {
-    const listElement = type === 'database' ? databaseList : tableList;
-    const items = type === 'database' ? allDatabases : allTables.map(table => table.name);
-    
-    // Clear existing items
-    listElement.innerHTML = '';
-    
-    const filteredItems = items.filter(item => 
-        item.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    
-    if (filteredItems.length === 0) {
-        const noResults = document.createElement('div');
-        noResults.className = 'no-results';
-        noResults.textContent = 'No matching items found';
-        listElement.appendChild(noResults);
-        return;
-    }
-    
-    // Add filtered items
-    filteredItems.forEach(item => {
-        const itemElement = document.createElement('div');
-        itemElement.className = 'dropdown-item';
-        itemElement.textContent = item;
-        itemElement.addEventListener('click', function() {
-            handleDropdownSelection(type, item);
-            // Hide the dropdown
-            const dropdown = type === 'database' ? databaseDropdown : tableDropdown;
-            const bsDropdown = bootstrap.Dropdown.getInstance(dropdown);
-            if (bsDropdown) {
-                bsDropdown.hide();
-            }
-        });
-        listElement.appendChild(itemElement);
-    });
-}
-
-function handleDropdownSelection(type, selectedValue) {
-    if (type === 'database') {
-        databaseText.textContent = selectedValue;
-        loadTables(selectedValue);
-    } else if (type === 'table') {
-        tableText.textContent = selectedValue;
+@app.route('/api/download_files', methods=['POST'])
+def download_files():
+    """API endpoint to download all files from an S3 path"""
+    try:
+        data = request.get_json()
+        s3_path = data.get('s3_path')
+        table_name = data.get('table_name', 's3_files')  # Get table name or default
         
-        // Find the selected table and set S3 location
-        const selectedTable = allTables.find(table => table.name === selectedValue);
-        if (selectedTable) {
-            currentS3Path = selectedTable.location;
-            s3LocationDiv.textContent = currentS3Path;
-            s3LocationDiv.style.color = '#000';
-            downloadBtn.disabled = false;
-            console.log('Table selected, S3 path:', currentS3Path);
-        }
-    }
-}
-
-function resetTableSelection() {
-    tableText.textContent = 'Select table...';
-    tableDropdown.disabled = true;
-    tableList.innerHTML = '';
-    tableSearch.value = '';
-    allTables = [];
-    resetS3Location();
-}
-
-function resetS3Location() {
-    s3LocationDiv.textContent = 'No table selected';
-    s3LocationDiv.style.color = '#6c757d';
-    downloadBtn.disabled = true;
-    currentS3Path = '';
-}
-
-function downloadFiles(s3Path) {
-    showElement(downloadLoading);
-    hideElement(downloadError);
-    hideElement(downloadSuccess);
+        if not s3_path:
+            return jsonify({'error': 'S3 path is required'}), 400
+        
+        logger.info(f"Downloading files from: {s3_path} for table: {table_name}")
+        
+        # Parse S3 path
+        if s3_path.startswith('s3://'):
+            parsed = urlparse(s3_path)
+            bucket_name = parsed.netloc
+            prefix = parsed.path.lstrip('/')
+        else:
+            return jsonify({'error': f"Invalid S3 path format: {s3_path}"}), 400
+        
+        # Create a temporary zip file with table name
+        temp_dir = tempfile.mkdtemp()
+        safe_table_name = "".join(c for c in table_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        zip_filename = os.path.join(temp_dir, f'{safe_table_name}.zip')
+        
+        s3_client = get_s3_client()
+        
+        with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            paginator = s3_client.get_paginator('list_objects_v2')
+            page_iterator = paginator.paginate(Bucket=bucket_name, Prefix=prefix)
+            
+            file_count = 0
+            folder_count = 0
+            
+            for page in page_iterator:
+                if 'Contents' in page:
+                    for obj in page['Contents']:
+                        key = obj['Key']
+                        
+                        # Skip the prefix itself if it's a "folder"
+                        if key == prefix:
+                            continue
+                            
+                        # Check if this is a folder (ends with /) or a file
+                        if key.endswith('/'):
+                            # It's a folder - create empty directory in zip
+                            folder_count += 1
+                            # ZipFile doesn't create empty directories by default, 
+                            # so we create them by adding a placeholder
+                            dir_path = key[len(prefix):] if key.startswith(prefix) else key
+                            if dir_path:  # Only if there's a subpath
+                                zipf.writestr(dir_path, '')  # Create empty directory
+                        else:
+                            # It's a file - download and add to zip
+                            response = s3_client.get_object(Bucket=bucket_name, Key=key)
+                            file_content = response['Body'].read()
+                            
+                            # Preserve folder structure in zip
+                            local_path = key[len(prefix):] if key.startswith(prefix) else key
+                            zipf.writestr(local_path, file_content)
+                            file_count += 1
+        
+        logger.info(f"Download completed. {file_count} files and {folder_count} folders zipped.")
+        return send_file(zip_filename, 
+                        as_attachment=True, 
+                        download_name=f'{safe_table_name}.zip', 
+                        mimetype='application/zip')
     
-    fetch('/api/download_files', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ s3_path: s3Path })
-    })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(data => {
-                throw new Error(data.error || 'Download failed');
-            });
-        }
-        return response.blob();
-    })
-    .then(blob => {
-        hideElement(downloadLoading);
-        
-        // Create download link
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        a.download = 's3_files.zip';
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        
-        showElement(downloadSuccess);
-        setTimeout(() => hideElement(downloadSuccess), 3000);
-    })
-    .catch(error => {
-        hideElement(downloadLoading);
-        showError(downloadError, `Download failed: ${error.message}`);
-    });
-}
-
-function showElement(element) {
-    element.style.display = 'block';
-}
-
-function hideElement(element) {
-    element.style.display = 'none';
-}
-
-function showError(element, message) {
-    element.textContent = message;
-    element.style.display = 'block';
-}
+    except ClientError as e:
+        error_msg = f"AWS S3 error: {str(e)}"
+        logger.error(error_msg)
+        return jsonify({'error': error_msg}), 500
+    except Exception as e:
+        error_msg = f"Download error: {str(e)}"
+        logger.error(error_msg)
+        return jsonify({'error': error_msg}), 500
