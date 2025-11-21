@@ -1,83 +1,183 @@
-/* Add these styles to your existing CSS */
-
-.dropdown-menu {
-    border: none;
-    border-radius: 8px;
-    box-shadow: var(--card-shadow);
-    padding: 0.5rem;
-    margin-top: 0.5rem;
-    width: 100%; /* Ensure full width */
-    max-height: 300px; /* Fixed height for scrolling */
-    overflow-y: auto; /* Enable scrolling */
-    overflow-x: hidden; /* Prevent horizontal scroll */
+// Update the populateDropdown function for both sections
+function populateDropdown(type, items) {
+    const listElement = type === 'database' ? databaseList : tableList;
+    const searchElement = type === 'database' ? databaseSearch : tableSearch;
+    
+    // Clear existing items
+    listElement.innerHTML = '';
+    
+    if (items.length === 0) {
+        const noResults = document.createElement('div');
+        noResults.className = 'no-results';
+        noResults.textContent = 'No items found';
+        listElement.appendChild(noResults);
+        return;
+    }
+    
+    // Add items to dropdown
+    items.forEach(item => {
+        const itemElement = document.createElement('div');
+        itemElement.className = 'dropdown-item';
+        itemElement.textContent = item;
+        itemElement.title = item; // Show full text on hover
+        itemElement.addEventListener('click', function() {
+            handleDropdownSelection(type, item);
+            // Hide the dropdown
+            const dropdown = type === 'database' ? databaseDropdown : tableDropdown;
+            const bsDropdown = bootstrap.Dropdown.getInstance(dropdown);
+            if (bsDropdown) {
+                bsDropdown.hide();
+            }
+        });
+        listElement.appendChild(itemElement);
+    });
+    
+    // Reset search
+    searchElement.value = '';
 }
 
-.search-input {
-    border: 2px solid #e9ecef;
-    border-radius: 6px;
-    padding: 0.5rem 0.75rem;
-    margin-bottom: 0.5rem;
-    font-size: 0.9rem;
-    width: calc(100% - 1rem); /* Account for margin */
-    margin-left: 0.5rem;
-    margin-right: 0.5rem;
+function filterDropdown(type, searchTerm) {
+    const listElement = type === 'database' ? databaseList : tableList;
+    const items = type === 'database' ? allDatabases : allTables.map(table => table.name);
+    
+    // Clear existing items
+    listElement.innerHTML = '';
+    
+    const filteredItems = items.filter(item => 
+        item.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    
+    if (filteredItems.length === 0) {
+        const noResults = document.createElement('div');
+        noResults.className = 'no-results';
+        noResults.textContent = 'No matching items found';
+        listElement.appendChild(noResults);
+        return;
+    }
+    
+    // Add filtered items
+    filteredItems.forEach(item => {
+        const itemElement = document.createElement('div');
+        itemElement.className = 'dropdown-item';
+        itemElement.textContent = item;
+        itemElement.title = item; // Show full text on hover
+        itemElement.addEventListener('click', function() {
+            handleDropdownSelection(type, item);
+            // Hide the dropdown
+            const dropdown = type === 'database' ? databaseDropdown : tableDropdown;
+            const bsDropdown = bootstrap.Dropdown.getInstance(dropdown);
+            if (bsDropdown) {
+                bsDropdown.hide();
+            }
+        });
+        listElement.appendChild(itemElement);
+    });
 }
 
-.search-input:focus {
-    border-color: var(--secondary-color);
-    box-shadow: none;
-    outline: none;
+// Update the populateUploadDropdown function
+function populateUploadDropdown(type, items) {
+    const listElement = type === 'database' ? uploadDatabaseList : uploadTableList;
+    const searchElement = type === 'database' ? uploadDatabaseSearch : uploadTableSearch;
+    
+    // Clear existing items
+    listElement.innerHTML = '';
+    
+    if (items.length === 0) {
+        const noResults = document.createElement('div');
+        noResults.className = 'no-results';
+        noResults.textContent = 'No items found';
+        listElement.appendChild(noResults);
+        return;
+    }
+    
+    // Add items to dropdown
+    items.forEach(item => {
+        const itemElement = document.createElement('div');
+        itemElement.className = 'dropdown-item';
+        itemElement.textContent = item;
+        itemElement.title = item; // Show full text on hover
+        itemElement.addEventListener('click', function() {
+            handleUploadDropdownSelection(type, item);
+            const dropdown = type === 'database' ? uploadDatabaseDropdown : uploadTableDropdown;
+            const bsDropdown = bootstrap.Dropdown.getInstance(dropdown);
+            if (bsDropdown) bsDropdown.hide();
+        });
+        listElement.appendChild(itemElement);
+    });
+    
+    // Reset search
+    searchElement.value = '';
 }
 
-.dropdown-list-container {
-    max-height: 250px; /* Space for search input + items */
-    overflow-y: auto;
+function filterUploadDropdown(type, searchTerm) {
+    const listElement = type === 'database' ? uploadDatabaseList : uploadTableList;
+    const items = type === 'database' ? uploadAllDatabases : uploadAllTables.map(table => table.name);
+    
+    // Clear existing items
+    listElement.innerHTML = '';
+    
+    const filteredItems = items.filter(item => 
+        item.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    
+    if (filteredItems.length === 0) {
+        const noResults = document.createElement('div');
+        noResults.className = 'no-results';
+        noResults.textContent = 'No matching items found';
+        listElement.appendChild(noResults);
+        return;
+    }
+    
+    // Add filtered items
+    filteredItems.forEach(item => {
+        const itemElement = document.createElement('div');
+        itemElement.className = 'dropdown-item';
+        itemElement.textContent = item;
+        itemElement.title = item; // Show full text on hover
+        itemElement.addEventListener('click', function() {
+            handleUploadDropdownSelection(type, item);
+            const dropdown = type === 'database' ? uploadDatabaseDropdown : uploadTableDropdown;
+            const bsDropdown = bootstrap.Dropdown.getInstance(dropdown);
+            if (bsDropdown) bsDropdown.hide();
+        });
+        listElement.appendChild(itemElement);
+    });
 }
 
-.dropdown-item {
-    padding: 0.75rem 1rem;
-    border-radius: 6px;
-    margin-bottom: 0.25rem;
-    transition: all 0.2s ease;
-    font-size: 0.9rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    cursor: pointer;
+// Update the handleDropdownSelection functions to use dropdown-toggle-text
+function handleDropdownSelection(type, selectedValue) {
+    if (type === 'database') {
+        databaseText.textContent = selectedValue;
+        loadTables(selectedValue);
+    } else if (type === 'table') {
+        tableText.textContent = selectedValue;
+        selectedTableName = selectedValue;
+        
+        const selectedTable = allTables.find(table => table.name === selectedValue);
+        if (selectedTable) {
+            currentS3Path = selectedTable.location;
+            s3LocationDiv.textContent = currentS3Path;
+            s3LocationDiv.style.color = '#000';
+            downloadBtn.disabled = false;
+            console.log('Table selected:', selectedTableName, 'S3 path:', currentS3Path);
+        }
+    }
 }
 
-.dropdown-item:hover {
-    background-color: var(--secondary-color);
-    color: white;
-}
-
-.no-results {
-    padding: 0.75rem 1rem;
-    color: #6c757d;
-    font-style: italic;
-    text-align: center;
-}
-
-/* Ensure dropdown toggle shows full text */
-.dropdown-toggle {
-    width: 100%;
-    text-align: left;
-    padding: 0.75rem 1rem;
-    background: white;
-    border: 2px solid #e9ecef;
-    border-radius: 8px;
-    font-size: 0.95rem;
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    overflow: hidden;
-}
-
-.dropdown-toggle-text {
-    flex: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-align: left;
+function handleUploadDropdownSelection(type, selectedValue) {
+    if (type === 'database') {
+        uploadDatabaseText.textContent = selectedValue;
+        loadUploadTables(selectedValue);
+    } else if (type === 'table') {
+        uploadTableText.textContent = selectedValue;
+        uploadSelectedTableName = selectedValue;
+        
+        const selectedTable = uploadAllTables.find(table => table.name === selectedValue);
+        if (selectedTable) {
+            uploadSelectedTableLocation = selectedTable.location;
+            uploadS3LocationDiv.textContent = uploadSelectedTableLocation;
+            uploadS3LocationDiv.style.color = '#000';
+        }
+    }
+    updateUploadButtonState();
 }
