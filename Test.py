@@ -23,14 +23,21 @@
         .search-container {
             position: relative;
         }
-        .datalist-options {
-            max-height: 200px;
-            overflow-y: auto;
+        /* Hide datalist by default - it will show on focus */
+        datalist {
+            display: none;
         }
-        .no-results {
-            color: #6c757d;
-            font-style: italic;
-            padding: 8px 12px;
+        .custom-dropdown {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+        .dropdown-arrow {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
         }
     </style>
 </head>
@@ -42,43 +49,45 @@
                 
                 <!-- Database Selection -->
                 <div class="mb-3">
-                    <label for="databaseInput" class="form-label">Search Database:</label>
-                    <div class="search-container">
+                    <label for="databaseInput" class="form-label">Select Database:</label>
+                    <div class="custom-dropdown">
                         <input type="text" 
                                class="form-control" 
                                id="databaseInput" 
                                list="databaseOptions"
-                               placeholder="Type to search databases..."
-                               autocomplete="off">
+                               placeholder="Click to select database..."
+                               autocomplete="off"
+                               readonly>
                         <datalist id="databaseOptions"></datalist>
+                        <span class="dropdown-arrow">▼</span>
                     </div>
                     <div id="databaseLoading" class="loading mt-1">
                         <div class="spinner-border spinner-border-sm" role="status"></div>
                         Loading databases...
                     </div>
                     <div id="databaseError" class="error-message mt-1"></div>
-                    <div class="form-text">Start typing to search through available databases</div>
                 </div>
                 
                 <!-- Table Selection -->
                 <div class="mb-3">
-                    <label for="tableInput" class="form-label">Search Table:</label>
-                    <div class="search-container">
+                    <label for="tableInput" class="form-label">Select Table:</label>
+                    <div class="custom-dropdown">
                         <input type="text" 
                                class="form-control" 
                                id="tableInput" 
                                list="tableOptions"
-                               placeholder="First select a database, then type to search tables..."
+                               placeholder="First select a database..."
                                autocomplete="off"
+                               readonly
                                disabled>
                         <datalist id="tableOptions"></datalist>
+                        <span class="dropdown-arrow">▼</span>
                     </div>
                     <div id="tableLoading" class="loading mt-1">
                         <div class="spinner-border spinner-border-sm" role="status"></div>
                         Loading tables...
                     </div>
                     <div id="tableError" class="error-message mt-1"></div>
-                    <div class="form-text">Start typing to search through available tables</div>
                 </div>
                 
                 <!-- S3 Location Display -->
