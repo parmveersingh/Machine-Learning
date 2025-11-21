@@ -1,68 +1,114 @@
-function loadTables(databaseName) {
-    // Reset table selection
-    resetTableSelection();
-    tableSelect.disabled = true;
 
-    console.log(`Loading tables for database: ${databaseName}`);
-    showElement(tableLoading);
-    hideElement(tableError);
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWS Glue Catalog File Downloader</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .loading {
+            display: none;
+            color: #6c757d;
+        }
+        .error-message {
+            color: #dc3545;
+            display: none;
+        }
+        #s3Location {
+            background-color: #f8f9fa;
+            font-family: monospace;
+            min-height: 48px;
+            padding: 12px;
+        }
+        .search-container {
+            position: relative;
+        }
+        .datalist-options {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .no-results {
+            color: #6c757d;
+            font-style: italic;
+            padding: 8px 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-md-8 offset-md-2">
+                <h1 class="mb-4">AWS Glue Catalog File Downloader</h1>
+                
+                <!-- Database Selection -->
+                <div class="mb-3">
+                    <label for="databaseInput" class="form-label">Search Database:</label>
+                    <div class="search-container">
+                        <input type="text" 
+                               class="form-control" 
+                               id="databaseInput" 
+                               list="databaseOptions"
+                               placeholder="Type to search databases..."
+                               autocomplete="off">
+                        <datalist id="databaseOptions"></datalist>
+                    </div>
+                    <div id="databaseLoading" class="loading mt-1">
+                        <div class="spinner-border spinner-border-sm" role="status"></div>
+                        Loading databases...
+                    </div>
+                    <div id="databaseError" class="error-message mt-1"></div>
+                    <div class="form-text">Start typing to search through available databases</div>
+                </div>
+                
+                <!-- Table Selection -->
+                <div class="mb-3">
+                    <label for="tableInput" class="form-label">Search Table:</label>
+                    <div class="search-container">
+                        <input type="text" 
+                               class="form-control" 
+                               id="tableInput" 
+                               list="tableOptions"
+                               placeholder="First select a database, then type to search tables..."
+                               autocomplete="off"
+                               disabled>
+                        <datalist id="tableOptions"></datalist>
+                    </div>
+                    <div id="tableLoading" class="loading mt-1">
+                        <div class="spinner-border spinner-border-sm" role="status"></div>
+                        Loading tables...
+                    </div>
+                    <div id="tableError" class="error-message mt-1"></div>
+                    <div class="form-text">Start typing to search through available tables</div>
+                </div>
+                
+                <!-- S3 Location Display -->
+                <div class="mb-3">
+                    <label class="form-label">S3 Location:</label>
+                    <div id="s3Location" class="p-3 border rounded">
+                        No table selected
+                    </div>
+                </div>
+                
+                <!-- Download Button -->
+                <div class="mb-3">
+                    <button id="downloadBtn" class="btn btn-primary" disabled>
+                        Download Files
+                    </button>
+                    <div id="downloadLoading" class="loading mt-1">
+                        <div class="spinner-border spinner-border-sm" role="status"></div>
+                        Preparing download...
+                    </div>
+                    <div id="downloadError" class="error-message mt-1"></div>
+                    <div id="downloadSuccess" class="text-success mt-1" style="display: none;">
+                        Download started successfully!
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-    fetch(`/api/tables/${encodeURIComponent(databaseName)}`)
-        .then(response => {
-            console.log('Tables API response status:', response.status);
-            if (!response.ok) {
-                // If response is not OK, try to get error message from response body
-                return response.json().then(errorData => {
-                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-                }).catch(() => {
-                    // If we can't parse JSON, throw with status only
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                });
-            }
-            return response.json();
-        })
-        .then(data => {
-            console.log('Tables API response data:', data);
-            hideElement(tableLoading);
-            tableSelect.disabled = false;
-
-            // Check if data exists and has error property
-            if (data && data.error) {
-                showError(tableError, data.error);
-                console.error('Tables API error:', data.error);
-                return;
-            }
-
-            // Check if tables array exists
-            if (!data || !data.tables) {
-                showError(tableError, 'Invalid response from server');
-                return;
-            }
-
-            // Populate table dropdown
-            tableSelect.innerHTML = '<option value="">-- Select a Table --</option>';
-            if (data.tables.length > 0) {
-                data.tables.forEach(table => {
-                    const option = document.createElement('option');
-                    option.value = table.name;
-                    option.textContent = table.name;
-                    option.dataset.location = table.location;
-                    tableSelect.appendChild(option);
-                });
-                console.log(`Loaded ${data.tables.length} tables`);
-            } else {
-                console.warn('No tables found in database:', databaseName);
-                const option = document.createElement('option');
-                option.value = '';
-                option.textContent = 'No tables found';
-                tableSelect.appendChild(option);
-            }
-        })
-        .catch(error => {
-            hideElement(tableLoading);
-            tableSelect.disabled = false;
-            const errorMsg = `Failed to load tables: ${error.message}`;
-            showError(tableError, errorMsg);
-            console.error('Tables fetch error:', error);
-        });
-}
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
