@@ -1,355 +1,150 @@
-// Fix the upload section initialization
-function initializeUploadSection() {
-    console.log('Initializing upload section...');
-    loadUploadDatabases();
-    
-    // File input events
-    const fileUploadArea = document.getElementById('fileUploadArea');
-    const zipFileInput = document.getElementById('zipFile');
-    
-    fileUploadArea.addEventListener('click', function() {
-        zipFileInput.click();
-    });
-    
-    zipFileInput.addEventListener('change', handleFileSelect);
-    
-    // Enhanced drag and drop
-    fileUploadArea.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        this.classList.add('dragover');
-    });
-    
-    fileUploadArea.addEventListener('dragleave', function(e) {
-        e.preventDefault();
-        this.classList.remove('dragover');
-    });
-    
-    fileUploadArea.addEventListener('drop', function(e) {
-        e.preventDefault();
-        this.classList.remove('dragover');
-        if (e.dataTransfer.files.length > 0) {
-            zipFileInput.files = e.dataTransfer.files;
-            handleFileSelect();
-        }
-    });
-    
-    // Upload database dropdown events - FIXED
-    uploadDatabaseSearch.addEventListener('input', function() {
-        console.log('Upload database search:', this.value);
-        filterUploadDropdown('database', this.value);
-    });
-    
-    // Upload table dropdown events - FIXED
-    uploadTableSearch.addEventListener('input', function() {
-        console.log('Upload table search:', this.value);
-        filterUploadDropdown('table', this.value);
-    });
-    
-    // Custom S3 path input event
-    customS3PathInput.addEventListener('input', function() {
-        updateUploadButtonState();
-    });
-    
-    // Upload button event
-    uploadBtn.addEventListener('click', handleUpload);
-}
-
-// Fix the loadUploadTables function
-function loadUploadTables(databaseName) {
-    uploadSelectedDatabase = databaseName;
-    
-    // Reset table selection
-    resetUploadTableSelection();
-    uploadTableDropdown.disabled = true;
-    uploadTableText.textContent = 'Loading tables...';
-    
-    console.log(`Loading tables for upload database: ${databaseName}`);
-    showElement(uploadTableLoading);
-    hideElement(uploadTableError);
-    
-    fetch(`/api/tables/${encodeURIComponent(databaseName)}`)
-        .then(response => {
-            console.log('Upload Tables API response status:', response.status);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
+@app.route('/api/upload_files', methods=['POST'])
+def upload_files():
+    """API endpoint to extract ZIP and upload individual files/folders to S3 with conditional delete"""
+    try:
+        if 'zip_file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        zip_file = request.files['zip_file']
+        s3_path = request.form.get('s3_path')
+        delete_existing = request.form.get('delete_existing', 'false').lower() == 'true'
+        is_custom_path = request.form.get('is_custom_path', 'false').lower() == 'true'
+        
+        if not zip_file or zip_file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        if not s3_path:
+            return jsonify({'error': 'S3 path is required'}), 400
+        
+        if not zip_file.filename.lower().endswith('.zip'):
+            return jsonify({'error': 'File must be a ZIP archive'}), 400
+        
+        logger.info(f"Extracting and uploading ZIP to: {s3_path}")
+        logger.info(f"Delete existing: {delete_existing}, Is custom path: {is_custom_path}")
+        
+        # Parse S3 path
+        if s3_path.startswith('s3://'):
+            parsed = urlparse(s3_path)
+            bucket_name = parsed.netloc
+            base_prefix = parsed.path.lstrip('/')
+        else:
+            return jsonify({'error': f"Invalid S3 path format: {s3_path}"}), 400
+        
+        # Ensure base prefix ends with / (so we're uploading INTO this folder)
+        if not base_prefix.endswith('/'):
+            base_prefix = base_prefix + '/'
+        
+        s3_client = get_s3_client()
+        
+        # Conditionally delete existing files
+        files_deleted = 0
+        if delete_existing and not is_custom_path:
+            logger.info(f"Deleting existing files from: s3://{bucket_name}/{base_prefix}")
+            files_deleted = delete_existing_files(s3_client, bucket_name, base_prefix)
+            logger.info(f"Deleted {files_deleted} existing files")
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = os.path.join(temp_dir, zip_file.filename)
+            zip_file.save(zip_path)
+            
+            uploaded_files = 0
+            uploaded_folders = set()
+            
+            # Extract ZIP file and upload individual files
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                # Get list of all files in the ZIP
+                file_list = zip_ref.namelist()
+                
+                for file_info in file_list:
+                    # Extract each file to temp directory
+                    extracted_path = zip_ref.extract(file_info, temp_dir)
+                    
+                    # Check if it's a directory (ends with / in ZIP)
+                    if file_info.endswith('/'):
+                        # It's a directory - we'll create it in S3 by putting objects with the path
+                        folder_key = base_prefix + file_info
+                        uploaded_folders.add(folder_key)
+                        logger.debug(f"Created folder: s3://{bucket_name}/{folder_key}")
+                    else:
+                        # It's a file - upload it to S3
+                        s3_key = base_prefix + file_info
+                        
+                        # Upload the actual file content
+                        with open(extracted_path, 'rb') as f:
+                            s3_client.put_object(
+                                Bucket=bucket_name,
+                                Key=s3_key,
+                                Body=f
+                            )
+                        
+                        uploaded_files += 1
+                        logger.debug(f"Uploaded file: s3://{bucket_name}/{s3_key}")
+            
+            # If no files were uploaded but we have folders, it might be an empty ZIP or only folders
+            if uploaded_files == 0 and len(uploaded_folders) == 0:
+                return jsonify({'error': 'ZIP file is empty or contains no files'}), 400
+        
+        logger.info(f"Upload completed. {uploaded_files} files uploaded to S3.")
+        return jsonify({
+            'success': True,
+            'message': f'Successfully extracted and uploaded {uploaded_files} files to {s3_path}',
+            'file_count': uploaded_files,
+            'folder_count': len(uploaded_folders),
+            'files_deleted': files_deleted,
+            'deletion_performed': delete_existing and not is_custom_path
         })
-        .then(data => {
-            console.log('Upload Tables API response data:', data);
-            hideElement(uploadTableLoading);
-            uploadTableDropdown.disabled = false;
-            
-            if (data.error) {
-                showError(uploadTableError, data.error);
-                uploadTableText.textContent = 'Error loading tables';
-                return;
-            }
-            
-            // Store all tables and populate dropdown - FIXED
-            uploadAllTables = data.tables || [];
-            console.log('Upload tables stored:', uploadAllTables);
-            
-            // Populate the dropdown with table names
-            populateUploadDropdown('table', uploadAllTables);
-            console.log(`Loaded ${uploadAllTables.length} tables for upload section`);
-        })
-        .catch(error => {
-            hideElement(uploadTableLoading);
-            uploadTableDropdown.disabled = false;
-            uploadTableText.textContent = 'Error loading tables';
-            const errorMsg = `Failed to load tables: ${error.message}`;
-            showError(uploadTableError, errorMsg);
-            console.error('Upload Tables fetch error:', error);
-        });
-}
+    
+    except zipfile.BadZipFile:
+        error_msg = 'Invalid ZIP file format'
+        logger.error(error_msg)
+        return jsonify({'error': error_msg}), 400
+    except ClientError as e:
+        error_msg = f"AWS S3 error: {str(e)}"
+        logger.error(error_msg)
+        return jsonify({'error': error_msg}), 500
+    except Exception as e:
+        error_msg = f"Upload error: {str(e)}"
+        logger.error(error_msg)
+        return jsonify({'error': error_msg}), 500
 
-// Fix the populateUploadDropdown function for tables
-function populateUploadDropdown(type, items) {
-    console.log(`Populating upload ${type} dropdown with:`, items);
-    
-    let listElement, displayItems;
-    
-    if (type === 'database') {
-        listElement = uploadDatabaseList;
-        displayItems = items; // items are database names (strings)
-        uploadAllDatabases = items || [];
-    } else if (type === 'table') {
-        listElement = uploadTableList;
-        // items are table objects, extract names for display
-        uploadAllTables = items || [];
-        displayItems = uploadAllTables.map(table => table.name);
-        console.log('Upload table names for display:', displayItems);
-    }
-    
-    // Clear existing items
-    listElement.innerHTML = '';
-    
-    if (!displayItems || displayItems.length === 0) {
-        const noResults = document.createElement('div');
-        noResults.className = 'no-results';
-        noResults.textContent = 'No items found';
-        listElement.appendChild(noResults);
-        return;
-    }
-    
-    // Add items to dropdown
-    displayItems.forEach((item, index) => {
-        const itemElement = document.createElement('div');
-        itemElement.className = 'dropdown-item';
-        itemElement.textContent = item;
-        itemElement.title = item;
+def delete_existing_files(s3_client, bucket_name, prefix):
+    """Delete all existing files at the given S3 prefix"""
+    try:
+        deleted_count = 0
         
-        // Store the actual table object reference if it's a table
-        if (type === 'table') {
-            itemElement.dataset.tableIndex = index;
-        }
+        # List all objects with the given prefix
+        paginator = s3_client.get_paginator('list_objects_v2')
+        page_iterator = paginator.paginate(
+            Bucket=bucket_name,
+            Prefix=prefix
+        )
         
-        itemElement.addEventListener('click', function() {
-            console.log(`Upload ${type} selected:`, item);
+        # Collect all objects to delete
+        objects_to_delete = []
+        for page in page_iterator:
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    objects_to_delete.append({'Key': obj['Key']})
+        
+        # Delete in batches of 1000 (S3 limit)
+        for i in range(0, len(objects_to_delete), 1000):
+            batch = objects_to_delete[i:i+1000]
+            response = s3_client.delete_objects(
+                Bucket=bucket_name,
+                Delete={'Objects': batch}
+            )
             
-            if (type === 'database') {
-                handleUploadDropdownSelection(type, item);
-            } else if (type === 'table') {
-                // For tables, get the full table object
-                const tableIndex = this.dataset.tableIndex;
-                const tableObject = uploadAllTables[tableIndex];
-                handleUploadDropdownSelection(type, tableObject);
-            }
+            # Count successfully deleted objects
+            if 'Deleted' in response:
+                deleted_count += len(response['Deleted'])
             
-            const dropdown = type === 'database' ? uploadDatabaseDropdown : uploadTableDropdown;
-            const bsDropdown = bootstrap.Dropdown.getInstance(dropdown);
-            if (bsDropdown) bsDropdown.hide();
-            
-            if (type === 'database') {
-                uploadDatabaseSearch.value = '';
-            } else {
-                uploadTableSearch.value = '';
-            }
-        });
+            # Log any errors
+            if 'Errors' in response:
+                for error in response['Errors']:
+                    logger.error(f"Failed to delete {error['Key']}: {error['Message']}")
         
-        listElement.appendChild(itemElement);
-    });
-    
-    if (type === 'database') {
-        uploadDatabaseSearch.value = '';
-    } else {
-        uploadTableSearch.value = '';
-    }
-}
-
-// Fix the filterUploadDropdown function
-function filterUploadDropdown(type, searchTerm) {
-    console.log(`Filtering upload ${type} with: "${searchTerm}"`);
-    
-    let listElement, items, displayItems;
-    
-    if (type === 'database') {
-        listElement = uploadDatabaseList;
-        items = uploadAllDatabases;
-        displayItems = items;
-    } else if (type === 'table') {
-        listElement = uploadTableList;
-        items = uploadAllTables;
-        // For tables, filter based on table names but keep the objects
-        displayItems = items ? items.map(table => table.name) : [];
-    }
-    
-    console.log(`Total upload ${type}s:`, displayItems.length);
-    
-    // Clear existing items
-    listElement.innerHTML = '';
-    
-    if (!displayItems || displayItems.length === 0) {
-        const noResults = document.createElement('div');
-        noResults.className = 'no-results';
-        noResults.textContent = 'No items found';
-        listElement.appendChild(noResults);
-        return;
-    }
-    
-    // Filter items based on search term
-    const filteredItems = items.filter((item, index) => {
-        const displayName = type === 'table' ? item.name : item;
-        if (!searchTerm || searchTerm.trim() === '') {
-            return true; // Show all items when search is empty
-        }
-        return displayName.toLowerCase().includes(searchTerm.toLowerCase());
-    });
-    
-    const filteredDisplayNames = filteredItems.map(item => 
-        type === 'table' ? item.name : item
-    );
-    
-    console.log(`Filtered upload ${type}s:`, filteredDisplayNames.length);
-    
-    if (filteredItems.length === 0) {
-        const noResults = document.createElement('div');
-        noResults.className = 'no-results';
-        noResults.textContent = `No ${type}s match "${searchTerm}"`;
-        listElement.appendChild(noResults);
-        return;
-    }
-    
-    // Add filtered items to dropdown
-    filteredItems.forEach((item, index) => {
-        const displayName = type === 'table' ? item.name : item;
-        const itemElement = document.createElement('div');
-        itemElement.className = 'dropdown-item';
-        itemElement.textContent = displayName;
-        itemElement.title = displayName;
+        return deleted_count
         
-        // Store the actual table object reference if it's a table
-        if (type === 'table') {
-            itemElement.dataset.tableIndex = uploadAllTables.indexOf(item);
-        }
-        
-        itemElement.addEventListener('click', function() {
-            console.log(`Upload ${type} selected:`, displayName);
-            
-            if (type === 'database') {
-                handleUploadDropdownSelection(type, item);
-            } else if (type === 'table') {
-                handleUploadDropdownSelection(type, item);
-            }
-            
-            const dropdown = type === 'database' ? uploadDatabaseDropdown : uploadTableDropdown;
-            const bsDropdown = bootstrap.Dropdown.getInstance(dropdown);
-            if (bsDropdown) bsDropdown.hide();
-            
-            if (type === 'database') {
-                uploadDatabaseSearch.value = '';
-            } else {
-                uploadTableSearch.value = '';
-            }
-        });
-        
-        listElement.appendChild(itemElement);
-    });
-}
-
-// Fix the handleUploadDropdownSelection function for tables
-function handleUploadDropdownSelection(type, selectedItem) {
-    if (type === 'database') {
-        uploadDatabaseText.textContent = selectedItem;
-        loadUploadTables(selectedItem);
-    } else if (type === 'table') {
-        // selectedItem is the table object
-        uploadTableText.textContent = selectedItem.name;
-        uploadSelectedTableName = selectedItem.name;
-        
-        uploadSelectedTableLocation = selectedItem.location;
-        uploadS3LocationDiv.textContent = uploadSelectedTableLocation;
-        uploadS3LocationDiv.style.color = '#000';
-        console.log('Upload table selected:', uploadSelectedTableName, 'S3 path:', uploadSelectedTableLocation);
-    }
-    updateUploadButtonState();
-}
-
-// Add debug function to check upload table data
-function debugUploadTableData() {
-    console.log('=== DEBUG UPLOAD TABLE DATA ===');
-    console.log('uploadAllTables:', uploadAllTables);
-    console.log('uploadDatabaseText:', uploadDatabaseText.textContent);
-    console.log('uploadTableText:', uploadTableText.textContent);
-    
-    if (uploadAllTables && uploadAllTables.length > 0) {
-        console.log('First upload table object:', uploadAllTables[0]);
-        console.log('Upload table name:', uploadAllTables[0].name);
-        console.log('Upload table location:', uploadAllTables[0].location);
-    } else {
-        console.log('No upload tables loaded');
-    }
-}
-
-// Update the DOMContentLoaded to ensure both sections work
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('Initializing AWS Glue Catalog Manager...');
-    
-    // Initialize all dropdowns
-    const dropdownElementList = [].slice.call(document.querySelectorAll('.dropdown-toggle'));
-    const dropdownList = dropdownElementList.map(function (dropdownToggleEl) {
-        return new bootstrap.Dropdown(dropdownToggleEl);
-    });
-    
-    // Prevent dropdown from closing when clicking inside
-    document.querySelectorAll('.dropdown-menu').forEach(function (dropdown) {
-        dropdown.addEventListener('click', function (e) {
-            e.stopPropagation();
-        });
-    });
-    
-    // Initialize dropdown search functionality
-    initializeDropdownSearch();
-    
-    // Download section event listeners
-    databaseSearch.addEventListener('input', function() {
-        console.log('Database search input:', this.value);
-        filterDropdown('database', this.value);
-    });
-    
-    tableSearch.addEventListener('input', function() {
-        console.log('Table search input:', this.value);
-        filterDropdown('table', this.value);
-    });
-    
-    // Download button event
-    downloadBtn.addEventListener('click', function() {
-        if (currentS3Path && selectedTableName) {
-            console.log('Download initiated - Table:', selectedTableName, 'Path:', currentS3Path);
-            downloadFiles(currentS3Path, selectedTableName);
-        } else {
-            showError(downloadError, 'Please select a table first');
-        }
-    });
-    
-    loadDatabases(); // Load databases for download section
-    initializeUploadSection(); // Initialize upload section
-    
-    // Debug after a short delay to see if both sections are working
-    setTimeout(() => {
-        console.log('=== INITIALIZATION COMPLETE ===');
-        console.log('Download databases loaded:', allDatabases.length);
-        console.log('Upload databases loaded:', uploadAllDatabases.length);
-    }, 2000);
-});
+    except Exception as e:
+        logger.error(f"Error deleting existing files: {str(e)}")
+        raise
