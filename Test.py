@@ -1,150 +1,139 @@
-@app.route('/api/upload_files', methods=['POST'])
-def upload_files():
-    """API endpoint to extract ZIP and upload individual files/folders to S3 with conditional delete"""
-    try:
-        if 'zip_file' not in request.files:
-            return jsonify({'error': 'No file provided'}), 400
-        
-        zip_file = request.files['zip_file']
-        s3_path = request.form.get('s3_path')
-        delete_existing = request.form.get('delete_existing', 'false').lower() == 'true'
-        is_custom_path = request.form.get('is_custom_path', 'false').lower() == 'true'
-        
-        if not zip_file or zip_file.filename == '':
-            return jsonify({'error': 'No file selected'}), 400
-        
-        if not s3_path:
-            return jsonify({'error': 'S3 path is required'}), 400
-        
-        if not zip_file.filename.lower().endswith('.zip'):
-            return jsonify({'error': 'File must be a ZIP archive'}), 400
-        
-        logger.info(f"Extracting and uploading ZIP to: {s3_path}")
-        logger.info(f"Delete existing: {delete_existing}, Is custom path: {is_custom_path}")
-        
-        # Parse S3 path
-        if s3_path.startswith('s3://'):
-            parsed = urlparse(s3_path)
-            bucket_name = parsed.netloc
-            base_prefix = parsed.path.lstrip('/')
-        else:
-            return jsonify({'error': f"Invalid S3 path format: {s3_path}"}), 400
-        
-        # Ensure base prefix ends with / (so we're uploading INTO this folder)
-        if not base_prefix.endswith('/'):
-            base_prefix = base_prefix + '/'
-        
-        s3_client = get_s3_client()
-        
-        # Conditionally delete existing files
-        files_deleted = 0
-        if delete_existing and not is_custom_path:
-            logger.info(f"Deleting existing files from: s3://{bucket_name}/{base_prefix}")
-            files_deleted = delete_existing_files(s3_client, bucket_name, base_prefix)
-            logger.info(f"Deleted {files_deleted} existing files")
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            zip_path = os.path.join(temp_dir, zip_file.filename)
-            zip_file.save(zip_path)
-            
-            uploaded_files = 0
-            uploaded_folders = set()
-            
-            # Extract ZIP file and upload individual files
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                # Get list of all files in the ZIP
-                file_list = zip_ref.namelist()
-                
-                for file_info in file_list:
-                    # Extract each file to temp directory
-                    extracted_path = zip_ref.extract(file_info, temp_dir)
-                    
-                    # Check if it's a directory (ends with / in ZIP)
-                    if file_info.endswith('/'):
-                        # It's a directory - we'll create it in S3 by putting objects with the path
-                        folder_key = base_prefix + file_info
-                        uploaded_folders.add(folder_key)
-                        logger.debug(f"Created folder: s3://{bucket_name}/{folder_key}")
-                    else:
-                        # It's a file - upload it to S3
-                        s3_key = base_prefix + file_info
-                        
-                        # Upload the actual file content
-                        with open(extracted_path, 'rb') as f:
-                            s3_client.put_object(
-                                Bucket=bucket_name,
-                                Key=s3_key,
-                                Body=f
-                            )
-                        
-                        uploaded_files += 1
-                        logger.debug(f"Uploaded file: s3://{bucket_name}/{s3_key}")
-            
-            # If no files were uploaded but we have folders, it might be an empty ZIP or only folders
-            if uploaded_files == 0 and len(uploaded_folders) == 0:
-                return jsonify({'error': 'ZIP file is empty or contains no files'}), 400
-        
-        logger.info(f"Upload completed. {uploaded_files} files uploaded to S3.")
-        return jsonify({
-            'success': True,
-            'message': f'Successfully extracted and uploaded {uploaded_files} files to {s3_path}',
-            'file_count': uploaded_files,
-            'folder_count': len(uploaded_folders),
-            'files_deleted': files_deleted,
-            'deletion_performed': delete_existing and not is_custom_path
-        })
+// Update the handleUpload function to include delete logic
+function handleUpload() {
+    if (!selectedZipFile) {
+        showError(uploadError, 'Please select a ZIP file');
+        return;
+    }
     
-    except zipfile.BadZipFile:
-        error_msg = 'Invalid ZIP file format'
-        logger.error(error_msg)
-        return jsonify({'error': error_msg}), 400
-    except ClientError as e:
-        error_msg = f"AWS S3 error: {str(e)}"
-        logger.error(error_msg)
-        return jsonify({'error': error_msg}), 500
-    except Exception as e:
-        error_msg = f"Upload error: {str(e)}"
-        logger.error(error_msg)
-        return jsonify({'error': error_msg}), 500
+    const customPath = customS3PathInput.value.trim();
+    const s3Path = customPath || uploadSelectedTableLocation;
+    const isCustomPath = customPath !== '';
+    
+    if (!s3Path) {
+        showError(uploadError, 'Please select a target S3 path');
+        return;
+    }
+    
+    // Determine if we should delete existing files
+    // Only delete when using table selection (not custom path) AND checkbox is checked
+    const deleteCheckbox = document.getElementById('deleteExisting');
+    const shouldDelete = !isCustomPath && deleteCheckbox.checked;
+    
+    // Confirm deletion if enabled
+    if (shouldDelete) {
+        if (!confirm(`Are you sure you want to delete all existing files at:\n${s3Path}\n\nThis action cannot be undone.`)) {
+            return;
+        }
+    }
+    
+    setButtonLoading(uploadBtn, true);
+    showElement(uploadLoading);
+    hideElement(uploadError);
+    hideElement(uploadSuccess);
+    
+    const formData = new FormData();
+    formData.append('zip_file', selectedZipFile);
+    formData.append('s3_path', s3Path);
+    formData.append('delete_existing', shouldDelete.toString());
+    formData.append('is_custom_path', isCustomPath.toString());
+    
+    console.log(`Uploading to: ${s3Path}, Delete existing: ${shouldDelete}, Is custom path: ${isCustomPath}`);
+    
+    fetch('/api/upload_files', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        setButtonLoading(uploadBtn, false);
+        hideElement(uploadLoading);
+        
+        if (data.error) {
+            showError(uploadError, data.error);
+        } else {
+            let successMessage = `Successfully uploaded ${data.file_count} files to ${s3Path}`;
+            if (data.deletion_performed && data.files_deleted > 0) {
+                successMessage += ` (${data.files_deleted} existing files were deleted)`;
+            } else if (data.deletion_performed) {
+                successMessage += ' (No existing files to delete)';
+            }
+            
+            showSuccess(uploadSuccess, successMessage);
+            setTimeout(() => hideElement(uploadSuccess), 7000);
+            console.log(`Upload successful: ${data.file_count} files uploaded`);
+        }
+    })
+    .catch(error => {
+        setButtonLoading(uploadBtn, false);
+        hideElement(uploadLoading);
+        showError(uploadError, `Upload failed: ${error.message}`);
+    });
+}
 
-def delete_existing_files(s3_client, bucket_name, prefix):
-    """Delete all existing files at the given S3 prefix"""
-    try:
-        deleted_count = 0
+// Update the updateUploadButtonState function
+function updateUploadButtonState() {
+    const hasFile = selectedZipFile !== null;
+    const hasS3Path = customS3PathInput.value.trim() !== '' || uploadSelectedTableLocation !== '';
+    
+    uploadBtn.disabled = !(hasFile && hasS3Path);
+    
+    // Update delete checkbox state based on whether using custom path
+    const deleteCheckbox = document.getElementById('deleteExisting');
+    const isCustomPath = customS3PathInput.value.trim() !== '';
+    
+    if (isCustomPath) {
+        deleteCheckbox.disabled = true;
+        deleteCheckbox.checked = false;
+        deleteCheckbox.parentElement.classList.add('text-muted');
+    } else {
+        deleteCheckbox.disabled = false;
+        deleteCheckbox.parentElement.classList.remove('text-muted');
+    }
+}
+
+// Update event listeners for custom path input
+customS3PathInput.addEventListener('input', function() {
+    updateUploadButtonState();
+    updateDeleteCheckboxState();
+});
+
+// Add function to update delete checkbox state
+function updateDeleteCheckboxState() {
+    const deleteCheckbox = document.getElementById('deleteExisting');
+    const isCustomPath = customS3PathInput.value.trim() !== '';
+    
+    if (isCustomPath) {
+        deleteCheckbox.disabled = true;
+        deleteCheckbox.checked = false;
+        // Add visual indication
+        const label = deleteCheckbox.nextElementSibling;
+        label.innerHTML = '<strong>Delete existing files before upload</strong> <span class="text-muted">(disabled for custom paths)</span>';
+    } else {
+        deleteCheckbox.disabled = false;
+        // Restore original label
+        const label = deleteCheckbox.nextElementSibling;
+        label.innerHTML = '<strong>Delete existing files before upload</strong>';
+    }
+}
+
+// Update the handleUploadDropdownSelection to reset delete checkbox when table is selected
+function handleUploadDropdownSelection(type, selectedItem) {
+    if (type === 'database') {
+        uploadDatabaseText.textContent = selectedItem;
+        loadUploadTables(selectedItem);
+    } else if (type === 'table') {
+        // selectedItem is the table object
+        uploadTableText.textContent = selectedItem.name;
+        uploadSelectedTableName = selectedItem.name;
         
-        # List all objects with the given prefix
-        paginator = s3_client.get_paginator('list_objects_v2')
-        page_iterator = paginator.paginate(
-            Bucket=bucket_name,
-            Prefix=prefix
-        )
-        
-        # Collect all objects to delete
-        objects_to_delete = []
-        for page in page_iterator:
-            if 'Contents' in page:
-                for obj in page['Contents']:
-                    objects_to_delete.append({'Key': obj['Key']})
-        
-        # Delete in batches of 1000 (S3 limit)
-        for i in range(0, len(objects_to_delete), 1000):
-            batch = objects_to_delete[i:i+1000]
-            response = s3_client.delete_objects(
-                Bucket=bucket_name,
-                Delete={'Objects': batch}
-            )
-            
-            # Count successfully deleted objects
-            if 'Deleted' in response:
-                deleted_count += len(response['Deleted'])
-            
-            # Log any errors
-            if 'Errors' in response:
-                for error in response['Errors']:
-                    logger.error(f"Failed to delete {error['Key']}: {error['Message']}")
-        
-        return deleted_count
-        
-    except Exception as e:
-        logger.error(f"Error deleting existing files: {str(e)}")
-        raise
+        uploadSelectedTableLocation = selectedItem.location;
+        uploadS3LocationDiv.textContent = uploadSelectedTableLocation;
+        uploadS3LocationDiv.style.color = '#000';
+        console.log('Upload table selected:', uploadSelectedTableName, 'S3 path:', uploadSelectedTableLocation);
+    }
+    
+    // Clear custom path input when selecting from dropdown
+    customS3PathInput.value = '';
+    updateUploadButtonState();
+    updateDeleteCheckboxState();
+}
